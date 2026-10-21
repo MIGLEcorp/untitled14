@@ -15,9 +15,9 @@ internal sealed class MainForm : Form
     private readonly Panel _viewport = new() { Dock = DockStyle.Fill, BackColor = Palette.Background };
     private readonly HomeSurface _home = new();
     private readonly Label _status = new(), _memory = new();
-    private readonly Button _back = Palette.Button("→", "رجوع (Alt+←)");
-    private readonly Button _forward = Palette.Button("←", "التالي (Alt+→)");
-    private readonly Button _reload = Palette.Button("↻", "تحديث (F5)");
+    private readonly Button _back = Palette.Button("←", "Назад (Alt+←)");
+    private readonly Button _forward = Palette.Button("→", "Вперёд (Alt+→)");
+    private readonly Button _reload = Palette.Button("↻", "Обновить (F5)");
     private readonly ToolTip _tips = new();
     private readonly System.Windows.Forms.Timer _memoryTimer = new() { Interval = 3000 };
     private readonly System.Windows.Forms.Timer _saveTimer = new() { Interval = 800 };
@@ -29,8 +29,6 @@ internal sealed class MainForm : Form
     private ulong _navigationId;
     private readonly bool _smoke;
     private readonly ContextMenuStrip _menu = new();
-    private bool _syncAddress, _gateOpen;
-    private Control? _gateWarnedFor;
 
     internal string DataPath { get; }
     internal Task ReadyTask => _ready.Task;
@@ -45,7 +43,7 @@ internal sealed class MainForm : Form
         DataPath = dataPath;
         _smoke = smoke;
         _session = SessionStore.Load(Path.Combine(DataPath, "session.json"));
-        Text = "Feather — متصفح خفيف";
+        Text = "Feather — лёгкий браузер";
         Size = new Size(1180, 800);
         MinimumSize = new Size(820, 650);
         StartPosition = FormStartPosition.CenterScreen;
@@ -58,8 +56,7 @@ internal sealed class MainForm : Form
         _tabs.TabSelected += index => RunUi(() => SelectTabAsync(index));
         _tabs.TabClosed += index => RunUi(() => CloseTabAsync(index));
         _tabs.NewTab += () => RunUi(() => OpenTabAsync());
-        _home.Submit += input => SubmitInput(_home.InputBox, input);
-        _home.OpenLink += url => RunUi(() => NavigateInputAsync(url));
+        _home.Navigate += input => RunUi(() => NavigateInputAsync(input));
         _memoryTimer.Tick += (_, _) => UpdateMemory();
         _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); SaveSession(); };
         Resize += (_, _) => SetMemoryTarget();
@@ -83,81 +80,68 @@ internal sealed class MainForm : Form
 
     private void BuildChrome()
     {
-        // Arabic chrome: mirrored toolbar columns put history buttons on the right and the menu on the left.
         var toolbar = new TableLayoutPanel
         {
             Dock = DockStyle.Top, Height = 58, Padding = new Padding(10, 10, 10, 10),
             ColumnCount = 7, RowCount = 1, BackColor = Palette.Surface
         };
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 44));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         for (int i = 0; i < 4; i++) toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 44));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 44));
         _back.Click += (_, _) => RunUi(GoBackAsync);
         _forward.Click += (_, _) => RunUi(GoForwardAsync);
         _reload.Click += (_, _) => RunUi(ReloadAsync);
-        var home = Palette.Button("⌂", "الصفحة الرئيسية (Alt+Home)");
+        var home = Palette.Button("⌂", "Стартовая страница (Alt+Home)");
         home.Click += (_, _) => RunUi(HomeAsync);
-        var addressBox = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Raised, Padding = new Padding(12, 7, 12, 6), Margin = new Padding(7, 0, 5, 0) };
+        toolbar.Controls.Add(_back, 0, 0);
+        toolbar.Controls.Add(_forward, 1, 0);
+        toolbar.Controls.Add(_reload, 2, 0);
+        toolbar.Controls.Add(home, 3, 0);
+        foreach (var button in new[] { _back, _forward, _reload, home }) _tips.SetToolTip(button, button.AccessibleName);
+
+        var addressBox = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Raised, Padding = new Padding(12, 7, 12, 6), Margin = new Padding(5, 0, 7, 0) };
         _address.Dock = DockStyle.Fill;
         _address.BorderStyle = BorderStyle.None;
         _address.BackColor = Palette.Raised;
         _address.ForeColor = Palette.Text;
         _address.Font = new Font("Segoe UI", 11);
-        _address.RightToLeft = RightToLeft.Yes;
-        _address.PlaceholderText = "عنوان موقع أو بحث في Google";
-        _address.AccessibleName = "عنوان الموقع (Ctrl+L)";
-        // Any foreign letter typed or pasted here opens the language gate window.
-        _address.TextChanged += (_, _) => HandleTypedInput(_address, _address.Text);
+        _address.PlaceholderText = "Адрес сайта или поиск в Google";
+        _address.AccessibleName = "Адрес сайта (Ctrl+L)";
         _address.KeyDown += (_, e) =>
         {
             if (e.KeyCode != Keys.Enter) return;
             e.SuppressKeyPress = true;
-            SubmitInput(_address, _address.Text);
+            RunUi(() => NavigateInputAsync(_address.Text));
         };
         addressBox.Controls.Add(_address);
-        _home.InputBox.TextChanged += (_, _) => HandleTypedInput(_home.InputBox, _home.InputBox.Text);
-        var go = Palette.Button("انتقال", "الانتقال إلى عنوان أو بحث", 67);
+        toolbar.Controls.Add(addressBox, 4, 0);
+        var go = Palette.Button("Найти", "Перейти по адресу или искать", 67);
         go.Font = new Font("Segoe UI", 10);
-        go.Click += (_, _) => SubmitInput(_address, _address.Text);
-        var menu = Palette.Button("☰", "القائمة");
-        menu.Click += (_, _) =>
-        {
-            _menu.Show(menu, new Point(0, menu.Height));
-            if (_menu.Left < 0) _menu.Left = 0;
-        };
-        toolbar.Controls.Add(menu, 0, 0);
-        toolbar.Controls.Add(go, 1, 0);
-        toolbar.Controls.Add(addressBox, 2, 0);
-        toolbar.Controls.Add(home, 3, 0);
-        toolbar.Controls.Add(_reload, 4, 0);
-        toolbar.Controls.Add(_forward, 5, 0);
-        toolbar.Controls.Add(_back, 6, 0);
-        foreach (var button in new[] { _back, _forward, _reload, home, go, menu }) _tips.SetToolTip(button, button.AccessibleName);
-
-        _menu.RightToLeft = RightToLeft.Yes;
-        _menu.Items.Add("تبويب جديد                                       Ctrl+T", null, (_, _) => RunUi(() => OpenTabAsync()));
-        _menu.Items.Add("إفراغ الصفحة / الصفحة الرئيسية", null, (_, _) => RunUi(HomeAsync));
-        _menu.Items.Add("التنزيلات                                             Ctrl+J", null, (_, _) => ShowDownloads());
+        go.Click += (_, _) => RunUi(() => NavigateInputAsync(_address.Text));
+        toolbar.Controls.Add(go, 5, 0);
+        var menu = Palette.Button("☰", "Меню");
+        menu.Click += (_, _) => _menu.Show(menu, new Point(0, menu.Height));
+        toolbar.Controls.Add(menu, 6, 0);
+        _menu.Items.Add("Новая вкладка                         Ctrl+T", null, (_, _) => RunUi(() => OpenTabAsync()));
+        _menu.Items.Add("Выгрузить страницу / на главную", null, (_, _) => RunUi(HomeAsync));
+        _menu.Items.Add("Загрузки                                        Ctrl+J", null, (_, _) => ShowDownloads());
         _menu.Items.Add(new ToolStripSeparator());
-        _menu.Items.Add("عن المتصفح وترشيد الذاكرة", null, (_, _) => MessageBox.Show(this,
-            "Feather 1.0\n\nلا يوجد في الذاكرة إلا صفحة واحدة. عند التبديل بين التبويبات تُفرَغ الصفحة ثم تُحمَّل من جديد، ويفقد الإدخال غير المحفوظ حالته، وقد تنقطع الفيديوهات والتنزيلات.\n\nتُحفظ الجلسة وملفات الارتباط محليًا. الصفحة الرئيسية الفارغة لا تشغّل المحرك، وعند تصغير النافذة يُستخدم وضع ذاكرة منخفضة.\n\nCtrl+L — العنوان، Ctrl+T — تبويب جديد، Ctrl+W — إغلاق، Ctrl+Tab — التالي، F5 — تحديث، Alt+←/→ — سجل التنقل.\n\nيعتمد استهلاك الذاكرة على الموقع، ولا يوجد حد ثابت.", "عن Feather", MessageBoxButtons.OK, MessageBoxIcon.Information));
+        _menu.Items.Add("О браузере и экономии памяти", null, (_, _) => MessageBox.Show(this,
+            "Feather 1.0\n\nВ памяти находится только одна страница. При переключении вкладка выгружается, а при возвращении загружается заново. Несохранённый ввод и состояние страницы теряются; фоновые видео и загрузки могут прерываться.\n\nСессия и cookies хранятся локально. Пустая стартовая страница не запускает движок. При сворачивании используется режим Low Memory.\n\nCtrl+L — адрес, Ctrl+T — вкладка, Ctrl+W — закрыть, Ctrl+Tab — следующая, F5 — обновить, Alt+←/→ — история.\n\nРасход памяти зависит от сайта; фиксированного лимита нет.", "О Feather", MessageBoxButtons.OK, MessageBoxIcon.Information));
 
         var footer = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 34, BackColor = Palette.Surface, ColumnCount = 2, Padding = new Padding(14, 0, 14, 0) };
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 390));
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 390));
         _status.Dock = _memory.Dock = DockStyle.Fill;
-        // Status text hugs the right edge, the memory counter the left one: the mirrored footer.
-        // RightToLeft.Yes flips horizontal alignment, hence the mirrored TextAlign values.
         _status.TextAlign = ContentAlignment.MiddleLeft;
         _memory.TextAlign = ContentAlignment.MiddleRight;
-        _status.RightToLeft = _memory.RightToLeft = RightToLeft.Yes;
         _status.ForeColor = Palette.Muted;
         _memory.ForeColor = Palette.Accent;
         _status.Font = _memory.Font = new Font("Segoe UI", 9);
         _status.AutoEllipsis = true;
-        footer.Controls.Add(_memory, 0, 0);
-        footer.Controls.Add(_status, 1, 0);
+        footer.Controls.Add(_status, 0, 0);
+        footer.Controls.Add(_memory, 1, 0);
         _viewport.Controls.Add(_home);
         Controls.Add(_viewport);
         Controls.Add(footer);
@@ -176,7 +160,7 @@ internal sealed class MainForm : Form
     {
         if (!AddressParser.TryResolve(input, out var url))
         {
-            _status.Text = "أدخل عنوان http/https أو عبارة بحث.";
+            _status.Text = "Введите адрес http/https или поисковый запрос.";
             return Task.CompletedTask;
         }
         return TransitionAsync(async () =>
@@ -188,7 +172,7 @@ internal sealed class MainForm : Form
 
     internal Task OpenTabAsync(string? url = null) => TransitionAsync(async () =>
     {
-        if (_session.Tabs.Count >= 100) { _status.Text = "تم بلوغ الحد الأقصى: 100 تبويب."; return; }
+        if (_session.Tabs.Count >= 100) { _status.Text = "Достигнут предел: 100 вкладок."; return; }
         var tab = new BrowserTab();
         if (url is not null && AddressParser.TryResolve(url, out var resolved)) tab.Visit(resolved);
         _session.Tabs.Add(tab);
@@ -231,7 +215,7 @@ internal sealed class MainForm : Form
         {
             ActiveCore.Stop();
             _loading = false;
-            _status.Text = "تم إيقاف التحميل";
+            _status.Text = "Загрузка остановлена";
             RefreshChrome();
         }
         else if (ActiveCore is not null) ActiveCore.Reload();
@@ -241,14 +225,14 @@ internal sealed class MainForm : Form
     private async Task LoadActiveAsync(bool replaceView)
     {
         string? url = ActiveTab.CurrentUrl;
-        SetAddress(url is null or "about:blank" ? "" : url);
+        _address.Text = url is null or "about:blank" ? "" : url;
         bool isHome = url is null or "about:blank";
         if (replaceView || isHome) DestroyView();
         if (isHome)
         {
-            ActiveTab.Title = "تبويب جديد";
+            ActiveTab.Title = "Новая вкладка";
             _home.Visible = true;
-            _status.Text = "الصفحة الرئيسية · لم يُشغَّل المحرك";
+            _status.Text = "Стартовая страница · движок не запущен";
             RefreshChrome();
             UpdateMemory();
             return;
@@ -256,18 +240,18 @@ internal sealed class MainForm : Form
 
         _home.Visible = false;
         _loading = true;
-        _status.Text = "جارٍ تحميل الصفحة…";
+        _status.Text = "Загрузка страницы…";
         RefreshChrome();
         if (_view is null)
         {
             var tab = ActiveTab;
-            var view = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Palette.Background, AccessibleName = "محتوى الصفحة" };
+            var view = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Palette.Background, AccessibleName = "Содержимое страницы" };
             _view = view;
             _viewport.Controls.Add(view);
             view.BringToFront();
             try
             {
-                _environment ??= await CoreWebView2Environment.CreateAsync(null, Path.Combine(DataPath, "WebView2"), new CoreWebView2EnvironmentOptions { Language = "ar-SA" });
+                _environment ??= await CoreWebView2Environment.CreateAsync(null, Path.Combine(DataPath, "WebView2"), new CoreWebView2EnvironmentOptions { Language = "ru-RU" });
                 if (_closing || view.IsDisposed) return;
                 await view.EnsureCoreWebView2Async(_environment);
                 if (_closing || view.IsDisposed || _view != view) return;
@@ -303,7 +287,7 @@ internal sealed class MainForm : Form
                 e.Cancel = true;
                 _programmaticNavigation = false;
                 _loading = false;
-                _status.Text = "نوع العنوان هذا غير مدعوم.";
+                _status.Text = "Этот тип адреса не поддерживается.";
                 RefreshChrome();
                 return;
             }
@@ -312,7 +296,7 @@ internal sealed class MainForm : Form
             _programmaticNavigation = false;
             _navigationId = e.NavigationId;
             _loading = true;
-            _status.Text = "جارٍ تحميل الصفحة…";
+            _status.Text = "Загрузка страницы…";
             RefreshChrome();
         };
         core.SourceChanged += (_, _) =>
@@ -333,7 +317,7 @@ internal sealed class MainForm : Form
         {
             if (!Current() || e.NavigationId != _navigationId) return;
             _loading = false;
-            _status.Text = e.IsSuccess ? "اكتمل التحميل · التبويبات الخلفية مُفرَغة" : $"تعذّر تحميل الصفحة: {e.WebErrorStatus}. اضغط ↻ للمحاولة مجددًا.";
+            _status.Text = e.IsSuccess ? "Готово · фоновые вкладки выгружаются" : $"Страница не загружена: {e.WebErrorStatus}. Нажмите ↻ для повтора.";
             RefreshChrome();
             UpdateMemory();
         };
@@ -349,7 +333,7 @@ internal sealed class MainForm : Form
         core.LaunchingExternalUriScheme += (_, e) => e.Cancel = true;
         core.DownloadStarting += (_, _) =>
         {
-            if (Current()) _status.Text = "جارٍ تنزيل ملف · ابقِ التبويب مفتوحًا حتى الانتهاء (Ctrl+J).";
+            if (Current()) _status.Text = "Загрузка файла · оставьте вкладку открытой до завершения (Ctrl+J).";
         };
         core.ProcessFailed += (_, e) =>
         {
@@ -361,7 +345,7 @@ internal sealed class MainForm : Form
                 if (!Current()) return;
                 DestroyView();
                 _home.Visible = true;
-                _status.Text = "انتهى محرك الصفحة. اضغط ↻ لفتحها من جديد.";
+                _status.Text = "Движок страницы завершился. Нажмите ↻, чтобы открыть её снова.";
                 RefreshChrome();
             });
         };
@@ -422,8 +406,8 @@ internal sealed class MainForm : Form
         if (_closing) return;
         var memory = ReadMemory();
         int sleeping = _session.Tabs.Count(t => t != ActiveTab && t.CurrentUrl is not null and not "about:blank");
-        _memory.Text = $"≈ {memory.WorkingSetBytes / 1048576d:N0} م.ب  ·  {LiveViewCount} نشط  /  {sleeping} خامل";
-        _tips.SetToolTip(_memory, $"التطبيق + عمليات WebView2 الخاصة به: {memory.ProcessCount}.\nمجموع مجموعات العمل؛ قد تُحسب صفحات الذاكرة المشتركة أكثر من مرة.\nالذاكرة الخاصة المحجوزة: {memory.PrivateBytes / 1048576d:N0} م.ب.\nهذا قياس وليس حدًا مفروضًا.");
+        _memory.Text = $"≈ {memory.WorkingSetBytes / 1048576d:N0} МБ  ·  {LiveViewCount} активная  /  {sleeping} спящих";
+        _tips.SetToolTip(_memory, $"Приложение + процессы его WebView2: {memory.ProcessCount}.\nСумма рабочих наборов; общие страницы памяти могут считаться повторно.\nЧастная выделенная память: {memory.PrivateBytes / 1048576d:N0} МБ.\nЭто измерение, а не установленный лимит.");
     }
 
     private void RefreshChrome()
@@ -432,7 +416,7 @@ internal sealed class MainForm : Form
         _tabs.Tabs = _session.Tabs;
         _tabs.SelectedIndex = _session.SelectedIndex;
         _tabs.RevealSelected();
-        if (!_address.Focused) SetAddress(ActiveTab.CurrentUrl is null or "about:blank" ? "" : ActiveTab.CurrentUrl);
+        if (!_address.Focused) _address.Text = ActiveTab.CurrentUrl is null or "about:blank" ? "" : ActiveTab.CurrentUrl;
         _back.Enabled = ActiveTab.CanGoBack;
         _forward.Enabled = ActiveTab.CanGoForward;
         _reload.Text = _loading ? "×" : "↻";
@@ -447,59 +431,11 @@ internal sealed class MainForm : Form
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             Program.LogError(DataPath, ex);
-            _status.Text = "تعذّر حفظ الجلسة. تحقّق من صلاحية الوصول إلى مجلد الملف الشخصي.";
+            _status.Text = "Не удалось сохранить сессию. Проверьте доступ к папке профиля.";
         }
     }
 
     private void FocusAddress() { _address.Focus(); _address.SelectAll(); }
-
-    /// <summary>Writes the address box without letting a programmatic value trip the language gate.</summary>
-    private void SetAddress(string value)
-    {
-        _syncAddress = true;
-        try { if (_address.Text != value) _address.Text = value; }
-        finally { _syncAddress = false; }
-    }
-
-    /// <summary>Runs for every edit in the address bar and on the start page; a foreign letter opens the gate.</summary>
-    private void HandleTypedInput(Control source, string text)
-    {
-        if (_syncAddress) return;
-        if (ArabicText.ContainsForeignLetter(text)) WarnLanguage(source);
-        else if (_gateWarnedFor == source) _gateWarnedFor = null;
-    }
-
-    /// <summary>Shows the picture window once per invalid entry, until the text becomes Arabic again.</summary>
-    private void WarnLanguage(Control source)
-    {
-        if (_gateWarnedFor == source || _smoke || _closing) return;
-        _gateWarnedFor = source;
-        ShowLanguageGate(source);
-    }
-
-    private void ShowLanguageGate(Control source)
-    {
-        if (_gateOpen || _closing) return;
-        _gateOpen = true;
-        try
-        {
-            using var gate = new LanguageGateForm();
-            gate.ShowDialog(this);
-        }
-        finally { _gateOpen = false; }
-        if (!IsDisposed && source is TextBox box && !box.ContainsFocus) box.Focus();
-    }
-
-    /// <summary>Arabic text navigates; a foreign script raises the gate and blocks the request.</summary>
-    private void SubmitInput(Control source, string text)
-    {
-        if (ArabicText.ContainsForeignLetter(text))
-        {
-            WarnLanguage(source);
-            return;
-        }
-        RunUi(() => NavigateInputAsync(text));
-    }
 
     private void ShowDownloads()
     {
@@ -543,12 +479,12 @@ internal sealed class MainForm : Form
     {
         Program.LogError(DataPath, ex);
         _loading = false;
-        _status.Text = "تعذّر فتح الصفحة. حاول مرة أخرى.";
+        _status.Text = "Не удалось открыть страницу. Попробуйте ещё раз.";
         RefreshChrome();
         if (!_smoke) MessageBox.Show(this,
             ex is WebView2RuntimeNotFoundException
-                ? "لم يُعثر على Microsoft Edge WebView2 Runtime. ثبّته من https://developer.microsoft.com/microsoft-edge/webview2/ ثم أعد تشغيل Feather."
-                : "تعذّر فتح الصفحة.\n" + ex.Message,
+                ? "Не найден Microsoft Edge WebView2 Runtime. Установите его с https://developer.microsoft.com/microsoft-edge/webview2/ и запустите Feather снова."
+                : "Не удалось открыть страницу.\n" + ex.Message,
             "Feather", MessageBoxButtons.OK, MessageBoxIcon.Warning);
     }
 

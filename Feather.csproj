@@ -16,11 +16,6 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />
   </ItemGroup>
-  <!-- Warning picture of the Arabic-only language gate, embedded into the executable. -->
-  <ItemGroup>
-    <None Remove="assets\gate.png" />
-    <EmbeddedResource Include="assets\gate.png" />
-  </ItemGroup>
   <!-- This WebView2 SDK also adds WPF by default. Feather uses WinForms only. -->
   <Target Name="RemoveUnusedWpfReference" BeforeTargets="ResolveAssemblyReferences">
     <ItemGroup>

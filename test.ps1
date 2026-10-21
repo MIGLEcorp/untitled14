@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
     dotnet build .\Feather.csproj -c Release --nologo

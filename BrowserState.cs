@@ -9,7 +9,7 @@ namespace Feather;
 public sealed class BrowserTab
 {
     public Guid Id { get; set; } = Guid.NewGuid();
-    public string Title { get; set; } = "تبويب جديد";
+    public string Title { get; set; } = "Новая вкладка";
     public List<string> History { get; set; } = [];
     public int HistoryIndex { get; set; } = -1;
 
@@ -218,7 +218,7 @@ public static class SessionStore
             var copy = new BrowserTab
             {
                 Id = tab.Id != Guid.Empty && ids.Add(tab.Id) ? tab.Id : Guid.NewGuid(),
-                Title = string.IsNullOrWhiteSpace(tab.Title) ? "تبويب جديد" : tab.Title[..Math.Min(tab.Title.Length, 300)],
+                Title = string.IsNullOrWhiteSpace(tab.Title) ? "Новая вкладка" : tab.Title[..Math.Min(tab.Title.Length, 300)],
                 History = [],
                 HistoryIndex = -1
             };

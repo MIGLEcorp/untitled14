@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
     dotnet publish .\Feather.csproj -c Release -r win-x64 --self-contained false -o .\dist

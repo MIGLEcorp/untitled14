@@ -51,25 +51,6 @@ public static class CoreTests
                     Assert(!AddressParser.TryResolve(value, out _), "Unexpectedly accepted: " + value);
             });
 
-            Check("Arabic-only typing policy: foreign letters are detected", () =>
-            {
-                // Arabic text, digits, punctuation, addresses and whitespace never count as foreign.
-                foreach (var value in new[] { "", "   ", "مرحبا بالعالم", "مَرْحَبًا", "الصفحة — الرئيسية ٢", "١٢٣ ٤٥٦", "127.0.0.1", "///", ":-?&=#%" })
-                    Assert(!ArabicText.ContainsForeignLetter(value), "Foreign letter reported in: " + value);
-                // Latin, Cyrillic, Greek and CJK letters are rejected, also mixed into Arabic text.
-                foreach (var value in new[] { "hello", "Привет", "Ελληνικά", "日本語", "example.com", "http://example.com/", "localhost:5000", "https://موقع.مثال/path" })
-                    Assert(ArabicText.ContainsForeignLetter(value), "Foreign letter missed in: " + value);
-                Assert(ArabicText.IsArabicLetter('م') && ArabicText.IsArabicLetter('ة'), "Arabic letters rejected");
-                Assert(!ArabicText.IsArabicLetter('a') && !ArabicText.IsArabicLetter('Я') && !ArabicText.IsArabicLetter('α'), "Foreign letters accepted");
-            });
-
-            Check("Language gate window embeds its warning picture", () =>
-            {
-                using var gate = new LanguageGateForm();
-                Assert(gate.RightToLeft == RightToLeft.Yes, "Gate window is not right to left");
-                Assert(gate.Controls.OfType<PictureBox>().Any(box => box.Image is not null), "Warning picture not embedded");
-            });
-
             Check("History branches, redirect replacement and bounds", () =>
             {
                 var tab = new BrowserTab();
@@ -97,14 +78,14 @@ public static class CoreTests
             Check("Session roundtrip and replacement", () =>
             {
                 var path = Path.Combine(folder, "nested", "session.json");
-                var session = new AppSession { Tabs = [new BrowserTab { Title = "مثال" }, new BrowserTab()], SelectedIndex = 1 };
+                var session = new AppSession { Tabs = [new BrowserTab { Title = "Пример" }, new BrowserTab()], SelectedIndex = 1 };
                 session.Tabs[0].Visit("https://example.com/one");
                 session.Tabs[0].Visit("https://example.com/two");
                 session.Tabs[0].Back();
                 SessionStore.Save(path, session);
                 var restored = SessionStore.Load(path);
                 Assert(restored.Tabs.Count == 2 && restored.SelectedIndex == 1, "Tabs not restored");
-                Assert(restored.Tabs[0].Id == session.Tabs[0].Id && restored.Tabs[0].Title == "مثال", "Tab metadata lost");
+                Assert(restored.Tabs[0].Id == session.Tabs[0].Id && restored.Tabs[0].Title == "Пример", "Tab metadata lost");
                 Assert(restored.Tabs[0].CurrentUrl == "https://example.com/one" && restored.Tabs[0].CanGoForward, "History position lost");
                 SessionStore.Save(path, new AppSession());
                 Assert(SessionStore.Load(path).Tabs.Count == 1, "Existing file not replaced");
@@ -123,7 +104,7 @@ public static class CoreTests
                 File.WriteAllText(path, "{\"Tabs\":[{\"Title\":null,\"History\":[\"javascript:alert(1)\",\"https://example.com/\",null,\"file:///secret\"],\"HistoryIndex\":3}],\"SelectedIndex\":900}");
                 var restored = SessionStore.Load(path);
                 Assert(restored.SelectedIndex == 0 && restored.Tabs[0].History.Count == 1, "Unsafe history retained");
-                Assert(restored.Tabs[0].CurrentUrl == "https://example.com/" && restored.Tabs[0].Title == "تبويب جديد", "Recovery position/title");
+                Assert(restored.Tabs[0].CurrentUrl == "https://example.com/" && restored.Tabs[0].Title == "Новая вкладка", "Recovery position/title");
             });
 
             Check("Session tab/history limits and unique identities", () =>
