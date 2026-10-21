@@ -24,7 +24,7 @@ internal static class Program
         using var instance = new Mutex(true, smoke ? "Local\\FeatherSmoke-" + Guid.NewGuid() : "Local\\FeatherBrowser", out bool first);
         if (!first)
         {
-            MessageBox.Show("Feather уже открыт. Используйте его окно на панели задач.", "Feather");
+            MessageBox.Show("Feather مفتوح بالفعل؛ استخدم نافذته في شريط المهام.", "Feather");
             return 0;
         }
 
