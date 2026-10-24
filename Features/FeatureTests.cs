@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Feather.Features;
+namespace MBrowser.Features;
 
 /// <summary>Fixture-only tests. Never inspects installed browsers or real credentials.</summary>
 public static class FeatureTests

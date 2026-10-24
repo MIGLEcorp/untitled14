@@ -1,16 +1,16 @@
-﻿param([switch]$Published)
+param([switch]$Published)
 
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
     if ($Published) {
-        $executable = Join-Path $PSScriptRoot 'dist\Feather.exe'
+        $executable = Join-Path $PSScriptRoot 'dist\MBrowser.exe'
     } else {
-        dotnet build .\Feather.csproj -c Release --nologo
+        dotnet build .\MBrowser.csproj -c Release --nologo
         if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
-        $executable = Join-Path $PSScriptRoot 'bin\Release\net10.0-windows\Feather.exe'
+        $executable = Join-Path $PSScriptRoot 'bin\Release\net10.0-windows\MBrowser.exe'
     }
-    if (!(Test-Path -LiteralPath $executable)) { throw 'Build Feather first with build.ps1.' }
+    if (!(Test-Path -LiteralPath $executable)) { throw 'Build MBrowser first with build.ps1.' }
     $core = Start-Process -FilePath $executable -ArgumentList '--self-test' -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput '.\core-results.txt' -RedirectStandardError '.\core-errors.txt'
     Get-Content -LiteralPath .\core-results.txt -Encoding UTF8
     if ($core.ExitCode -ne 0) { throw 'Core tests failed. See core-results.txt and core-errors.txt.' }

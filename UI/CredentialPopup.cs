@@ -1,4 +1,4 @@
-﻿namespace Feather;
+namespace MBrowser;
 
 internal sealed record CredentialSuggestion(string Id, string Username, string Title);
 
@@ -11,7 +11,7 @@ internal sealed class CredentialPopup : GlassPanel
     internal CredentialPopup(string origin, IReadOnlyList<CredentialSuggestion> suggestions, Action<string> choose)
     {
         Size = new Size(350, Math.Min(440, 68 + suggestions.Count * 60));
-        AccessibleName = "Сохранённые пароли Feather";
+        AccessibleName = "Сохранённые пароли MBrowser";
         var flow = new FlowLayoutPanel { Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,WrapContents=false,AutoScroll=true,BackColor=Color.Transparent };
         flow.Controls.Add(new Label { Text="Пароли · " + new Uri(origin).Host,Width=305,Height=30,ForeColor=Palette.Muted,BackColor=Color.Transparent });
         foreach(var suggestion in suggestions)

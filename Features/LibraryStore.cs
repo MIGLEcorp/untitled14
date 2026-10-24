@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace Feather.Features;
+namespace MBrowser.Features;
 
 public sealed record Bookmark(string Title, string Url);
 
@@ -44,7 +44,7 @@ public sealed class BookmarkStore(string path)
 
     public void ExportHtml(string destination)
     {
-        var html = new StringBuilder("<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">\n<TITLE>Feather bookmarks</TITLE>\n<H1>Feather bookmarks</H1>\n<DL><p>\n");
+        var html = new StringBuilder("<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">\n<TITLE>MBrowser bookmarks</TITLE>\n<H1>MBrowser bookmarks</H1>\n<DL><p>\n");
         foreach (var item in Load())
             html.Append("<DT><A HREF=\"").Append(WebUtility.HtmlEncode(item.Url)).Append("\">").Append(WebUtility.HtmlEncode(item.Title)).Append("</A>\n");
         html.Append("</DL><p>\n");

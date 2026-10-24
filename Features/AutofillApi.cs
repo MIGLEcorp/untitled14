@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace Feather.Features;
+namespace MBrowser.Features;
 
 public sealed partial class BrowserLibrary
 {

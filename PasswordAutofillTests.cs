@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 
-namespace Feather;
+namespace MBrowser;
 
 /// <summary>Disposable vault and actual WebView2 DOM tests. Called only by the smoke profile.</summary>
 internal static class PasswordAutofillTests

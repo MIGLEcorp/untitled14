@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Feather;
+namespace MBrowser;
 
 internal sealed class FaviconCache(string dataPath) : IDisposable
 {

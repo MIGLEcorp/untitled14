@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
-namespace Feather;
+namespace MBrowser;
 
 internal readonly record struct MemorySnapshot(long WorkingSetBytes, long PrivateBytes, int ProcessCount);
 
@@ -46,10 +46,10 @@ internal sealed partial class MainForm : BrowserWindow
         DataPath = dataPath;
         _smoke = smoke;
         _preferences = BrowserPreferences.Load(dataPath);
-        AnimeArtwork.FileName = _preferences.Wallpaper;
         ThemeSettings.Load(dataPath);
         _session = SessionStore.Load(Path.Combine(dataPath, "session.json"));
-        Text = "Feather";
+        Text = "MBrowser";
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         Size = new Size(1180, 800);
         MinimumSize = new Size(820, 650);
         StartPosition = FormStartPosition.CenterScreen;
@@ -70,8 +70,8 @@ internal sealed partial class MainForm : BrowserWindow
         _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); SaveSession(); };
         Resize += (_, _) => { SetMemoryTargets(); DismissPasswordPopup(); };
         Move += (_, _) => DismissPasswordPopup();
-        Deactivate += (_, _) => { _inactiveSinceUtc = DateTimeOffset.UtcNow; DismissPasswordPopup(); };
-        Activated += (_, _) => ResumeActivePage();
+        Deactivate += (_, _) => { _inactiveSinceUtc = DateTimeOffset.UtcNow; DismissPasswordPopup(); ThemeMedia.SetActive(false); };
+        Activated += (_, _) => { ResumeActivePage(); ThemeMedia.SetActive(true); };
         Shown += async (_, _) =>
         {
             try
@@ -103,7 +103,7 @@ internal sealed partial class MainForm : BrowserWindow
         _back.Enabled = ActiveTab.CanGoBack;
         _forward.Enabled = ActiveTab.CanGoForward;
         _reload.Text = IsPageLoading ? "×" : "↻";
-        Text = ActiveTab.Title + " — Feather";
+        Text = ActiveTab.Title + " — MBrowser";
         _saveTimer.Stop();
         _saveTimer.Start();
     }
@@ -160,8 +160,8 @@ internal sealed partial class MainForm : BrowserWindow
         RefreshChrome();
         if (!_smoke) MessageBox.Show(this,
             ex is WebView2RuntimeNotFoundException
-                ? "Не найден Microsoft Edge WebView2 Runtime. Установите Runtime и запустите Feather снова."
-                : ex.Message, "Feather", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                ? "Не найден Microsoft Edge WebView2 Runtime. Установите Runtime и запустите MBrowser снова."
+                : ex.Message, "MBrowser", MessageBoxButtons.OK, MessageBoxIcon.Warning);
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
@@ -188,6 +188,7 @@ internal sealed partial class MainForm : BrowserWindow
             _suggestionCancellation?.Cancel();
             _faviconCache?.Dispose();
             DestroyAllViews();
+            ThemeMedia.ReleaseAll();
         }
         base.Dispose(disposing);
     }

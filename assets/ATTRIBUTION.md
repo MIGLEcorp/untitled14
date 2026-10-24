@@ -1,4 +1,23 @@
-﻿# Artwork attribution
+# Artwork attribution
+
+## Pink kawaii theme and MBrowser icon
+
+`kawaii-original.png`: **Moe anime girl in sailor fuku** by **Akane-K**, March 22, 2018.
+Human-drawn illustration, published before modern image generators. CC0 1.0:
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Source and reviewed license:
+https://commons.wikimedia.org/wiki/File:Moe_anime_girl_in_sailor_fuku.png
+Original: https://upload.wikimedia.org/wikipedia/commons/a/a5/Moe_anime_girl_in_sailor_fuku.png
+Originally published at https://pixabay.com/illustrations/moe-cute-beautiful-girl-3251269/
+Commons license review: April 12, 2020.
+
+`kawaii-home.jpg`, `kawaii-menu.jpg`, `kawaii-chrome.jpg` and `mbrowser.ico` are
+cropped/composited versions of this drawing over a pink gradient. Rebuild with
+`python tools/prepare-artwork.py` (Pillow). No AI generation or AI image processing.
+The original author does not endorse MBrowser.
+
+## Additional wallpapers
 
 These are original, human-drawn illustrations by David Revoy, downloaded without image-generation or image-to-image processing.
 

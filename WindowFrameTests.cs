@@ -1,5 +1,5 @@
-﻿using System.Runtime.InteropServices;
-namespace Feather;
+using System.Runtime.InteropServices;
+namespace MBrowser;
 internal static class WindowFrameTests
 {
     internal static async Task RunAsync(MainForm form, Action<bool,string> check)
@@ -10,8 +10,11 @@ internal static class WindowFrameTests
         check(form.InternalMenuBounds.Left>=0 && form.InternalMenuBounds.Top>=0, "Menu is positioned in the content client area");
         check((GetWindowLongPtr(form.Handle,-16).ToInt64() & 0x00c00000)==0, "Opening the internal menu does not restore a native caption");
         if (form.InternalMenuControlForTest is { } panel)
-            using (var image = new Bitmap(panel.Width, panel.Height))
-            { panel.DrawToBitmap(image, new Rectangle(Point.Empty, image.Size)); image.Save("preview-menu.png", System.Drawing.Imaging.ImageFormat.Png); }
+        {
+            panel.Refresh(); await Task.Delay(80);
+            using var image = ThemeTests.Capture(panel);
+            image.Save("preview-menu.png", System.Drawing.Imaging.ImageFormat.Png);
+        }
         form.ToggleFullScreen();
         await Task.Delay(100);
         form.ShowMainMenu();

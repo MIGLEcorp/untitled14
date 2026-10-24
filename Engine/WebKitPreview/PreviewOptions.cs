@@ -1,4 +1,4 @@
-namespace Feather.WebKit;
+namespace MBrowser.WebKit;
 
 /// <summary>Explicit paths keep the optional engine separate from every browser's real profile.</summary>
 internal sealed record PreviewOptions

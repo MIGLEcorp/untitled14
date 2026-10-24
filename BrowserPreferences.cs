@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Feather;
+namespace MBrowser;
 
 /// <summary>Small startup settings. Heavy feature stores are opened only from their menus.</summary>
 internal sealed class BrowserPreferences

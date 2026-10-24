@@ -1,10 +1,10 @@
 @echo off
 cd /d "%~dp0"
-if exist "dist\Feather.exe" (
-  start "" "dist\Feather.exe"
-) else if exist "bin\Release\net10.0-windows\Feather.exe" (
-  start "" "bin\Release\net10.0-windows\Feather.exe"
+if exist "dist\MBrowser.exe" (
+  start "" "dist\MBrowser.exe"
+) else if exist "bin\Release\net10.0-windows\MBrowser.exe" (
+  start "" "bin\Release\net10.0-windows\MBrowser.exe"
 ) else (
-  echo Build Feather first: powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1
+  echo Build MBrowser first: powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1
   exit /b 1
 )

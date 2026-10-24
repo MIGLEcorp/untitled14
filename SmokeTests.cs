@@ -7,7 +7,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 
-namespace Feather;
+namespace MBrowser;
 
 /// <summary>Exercises the real WinForms host and installed WebView2 Runtime without using external sites.</summary>
 internal static class SmokeTests
@@ -23,12 +23,14 @@ internal static class SmokeTests
         {
             await form.ReadyTask.WaitAsync(TimeSpan.FromSeconds(40));
             Check(form.LiveViewCount==0,"Native home starts without a browser engine");
-            using(var bitmap=new Bitmap(form.Width,form.Height)){form.DrawToBitmap(bitmap,new Rectangle(Point.Empty,bitmap.Size));bitmap.Save("preview.png",ImageFormat.Png);}
+            await ThemeTests.RunUiAsync(form, dataPath, Check);
+            form.Refresh(); await Task.Delay(100);
+            using(var bitmap=ThemeTests.Capture(form)) bitmap.Save("preview.png",ImageFormat.Png);
             await WindowFrameTests.RunAsync(form,Check);
             await using var server=new LocalPageServer();
             string one=server.Origin+"one",two=server.Origin+"two";
             await form.NavigateInputAsync(one);
-            await WaitForPageAsync(form,one,"Feather smoke one");
+            await WaitForPageAsync(form,one,"MBrowser smoke one");
             await WaitUntilAsync(()=>Directory.Exists(Path.Combine(dataPath,"Favicons")) && Directory.EnumerateFiles(Path.Combine(dataPath,"Favicons")).Any(),"Site favicon did not reach the local cache");
             Check(true,"The engine favicon is decoded and cached locally");
             await File.WriteAllTextAsync(Path.Combine(dataPath,"bookmarks.json"),JsonSerializer.Serialize(new[]{new{Title="Local bookmark fixture",Url=one}}));
@@ -51,8 +53,8 @@ internal static class SmokeTests
             Check(await retained.ExecuteScriptAsync("window.retainedState.value")=="73" && await retained.ExecuteScriptAsync("document.getElementById('draft').value")=="\"unsaved draft\"","DOM, JavaScript objects and unsaved input survive freezing");
             await form.CloseTabAsync(1);
             await retained.ExecuteScriptAsync("document.getElementById('next').click()");
-            await WaitForPageAsync(form,two,"Feather smoke two");
-            await form.GoBackAsync(); await WaitForPageAsync(form,one,"Feather smoke one");
+            await WaitForPageAsync(form,two,"MBrowser smoke two");
+            await form.GoBackAsync(); await WaitForPageAsync(form,one,"MBrowser smoke one");
             Check(form.ActiveTab.CanGoForward,"History remains usable after suspension and navigation");
             retained=form.ActiveCore!;
             await retained.ExecuteScriptAsync("navigator.geolocation.getCurrentPosition(()=>window.permissionFixture='allow',()=>window.permissionFixture='deny')");
@@ -63,14 +65,14 @@ internal static class SmokeTests
             Check(!form.IsPermissionPromptVisible,"Permission request resolves and its UI is released");
             string extensionPath=Path.Combine(dataPath,"extension-fixture");Directory.CreateDirectory(extensionPath);
             await File.WriteAllTextAsync(Path.Combine(extensionPath,"manifest.json"),"""
-                {"manifest_version":3,"name":"Feather API fixture","version":"1.0","permissions":["storage","declarativeNetRequest"],"host_permissions":["http://127.0.0.1/*"],"content_scripts":[{"matches":["http://127.0.0.1/*"],"js":["content.js"]}],"declarative_net_request":{"rule_resources":[{"id":"rules","enabled":true,"path":"rules.json"}]}}
+                {"manifest_version":3,"name":"MBrowser API fixture","version":"1.0","permissions":["storage","declarativeNetRequest"],"host_permissions":["http://127.0.0.1/*"],"content_scripts":[{"matches":["http://127.0.0.1/*"],"js":["content.js"]}],"declarative_net_request":{"rule_resources":[{"id":"rules","enabled":true,"path":"rules.json"}]}}
                 """);
             await File.WriteAllTextAsync(Path.Combine(extensionPath,"content.js"),"chrome.storage.local.set({probe:91},()=>chrome.storage.local.get('probe',r=>document.documentElement.dataset.extensionProbe=String(r.probe)))");
             await File.WriteAllTextAsync(Path.Combine(extensionPath,"rules.json"),"""
                 [{"id":1,"priority":1,"action":{"type":"block"},"condition":{"urlFilter":"/blocked","resourceTypes":["xmlhttprequest"]}}]
                 """);
             var extension=await retained.Profile.AddBrowserExtensionAsync(extensionPath);
-            retained.Navigate(one+"?extension");await WaitForPageAsync(form,one+"?extension","Feather smoke one");
+            retained.Navigate(one+"?extension");await WaitForPageAsync(form,one+"?extension","MBrowser smoke one");
             await WaitForScriptValueAsync(form,"document.documentElement.dataset.extensionProbe","\"91\"");
             Check(true,"Manifest V3 content scripts and chrome.storage work in a real tab");
             await retained.ExecuteScriptAsync("fetch('/blocked').then(()=>window.blockFixture=false).catch(()=>window.blockFixture=true)");
@@ -213,7 +215,7 @@ internal static class SmokeTests
                 bool second = path.StartsWith("/two", StringComparison.Ordinal);
                 string name = second ? "two" : "one";
                 string destination = second ? "/one" : "/two";
-                string html = $"<!doctype html><html><head><meta charset=\"utf-8\"><title>Feather smoke {name}</title><link rel=\"icon\" href=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2300b5bd'/%3E%3C/svg%3E\"><style>body{{min-height:3200px}}</style></head><body><h1>Local test {name}</h1><p id=\"probe\">Waiting for JavaScript</p><a id=\"next\" href=\"{destination}\">Next page</a><script>window.smokeProbe=42;document.getElementById('probe').textContent='JavaScript is running';</script></body></html>";
+                string html = $"<!doctype html><html><head><meta charset=\"utf-8\"><title>MBrowser smoke {name}</title><link rel=\"icon\" href=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2300b5bd'/%3E%3C/svg%3E\"><style>body{{min-height:3200px}}</style></head><body><h1>Local test {name}</h1><p id=\"probe\">Waiting for JavaScript</p><a id=\"next\" href=\"{destination}\">Next page</a><script>window.smokeProbe=42;document.getElementById('probe').textContent='JavaScript is running';</script></body></html>";
                 byte[] body = Encoding.UTF8.GetBytes(html);
                 byte[] responseHeader = Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {body.Length}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n");
                 await stream.WriteAsync(responseHeader, timeout.Token);

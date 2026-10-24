@@ -4,8 +4,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyName>Feather.Features</AssemblyName>
-    <RootNamespace>Feather.Features</RootNamespace>
+    <AssemblyName>MBrowser.Features</AssemblyName>
+    <RootNamespace>MBrowser.Features</RootNamespace>
     <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
   <ItemGroup>

@@ -1,4 +1,4 @@
-namespace Feather.Features;
+namespace MBrowser.Features;
 
 public sealed record BrowserProfile(string Browser, string Name, string DirectoryPath, string? BookmarkPath, string? CookiePath, bool IsFirefox)
 {

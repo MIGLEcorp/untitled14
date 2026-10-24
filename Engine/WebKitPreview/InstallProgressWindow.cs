@@ -1,11 +1,11 @@
-namespace Feather.WebKit;
+namespace MBrowser.WebKit;
 
 /// <summary>The installer runs only in this optional process; the main browser stays responsive.</summary>
 internal sealed class InstallProgressWindow : Form
 {
     internal InstallProgressWindow()
     {
-        Text = "Feather · установка WebKit";
+        Text = "MBrowser · установка WebKit";
         ClientSize = new Size(460, 115);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         ControlBox = false;

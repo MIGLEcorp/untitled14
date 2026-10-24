@@ -1,7 +1,7 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Drawing.Drawing2D;
 
-namespace Feather;
+namespace MBrowser;
 
 /// <summary>Native chrome and a start page that never needs to launch a web engine.</summary>
 internal static class Palette
@@ -103,13 +103,14 @@ internal sealed class TabStrip : Control
         Dock = DockStyle.Top;
         BackColor = Palette.Background;
         ForeColor = Palette.Text;
-        DoubleBuffered = true;
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         TabStop = true;
         AccessibleRole = AccessibleRole.PageTabList;
         AccessibleName = "Вкладки. Ctrl+Tab — следующая, Ctrl+W — закрыть";
     }
 
     private int Capacity => Math.Max(1, (Width - 116) / 160);
+    protected override void OnPaintBackground(PaintEventArgs e) => ThemeMedia.Draw(e.Graphics, ClientRectangle, ThemeArea.Tabs, this);
     private bool HasOverflow => Tabs.Count > Capacity;
 
     public void RevealSelected()
@@ -285,14 +286,14 @@ internal sealed class TabStrip : Control
 
 internal sealed class HomeSurface : Panel
 {
-    private readonly GlassPanel _searchBox = new() { Size = new Size(620, 62), Padding = new Padding(22, 20, 20, 16) };
+    private readonly GlassPanel _searchBox = new() { UseArtwork = false, Size = new Size(620, 62), Padding = new Padding(22, 20, 20, 16) };
     internal TextBox SearchBox { get; } = new() { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None,
         BackColor = Palette.Surface, ForeColor = Palette.Text, Font = new Font("Segoe UI", 13), PlaceholderText = "Поиск или адрес сайта" };
     public event Action<string>? Navigate;
     public HomeSurface()
     {
         Dock = DockStyle.Fill;
-        DoubleBuffered = true;
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         _searchBox.Controls.Add(SearchBox);
         Controls.Add(_searchBox);
         SearchBox.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; Navigate?.Invoke(SearchBox.Text); } };
@@ -302,13 +303,13 @@ internal sealed class HomeSurface : Panel
     {
         _searchBox.Width = Math.Min(620, Math.Max(280, Width - 64));
         _searchBox.Location = new Point((Width - _searchBox.Width) / 2, Math.Max(32, Height / 3 - 30));
+        // Moving a child HWND and resizing the cover crop both invalidate old pixels.
+        // A full repaint prevents Win32's copied client bits from surviving a resize.
+        Invalidate(true);
     }
     internal void RefreshTheme() { CenterSearch(); Invalidate(true); }
     protected override void OnPaintBackground(PaintEventArgs e)
     {
-        e.Graphics.Clear(Palette.Background);
-        AnimeArtwork.DrawBackdrop(e.Graphics, ClientRectangle);
-        using var shade = new SolidBrush(Color.FromArgb(24, Color.Black));
-        e.Graphics.FillRectangle(shade, ClientRectangle);
+        ThemeMedia.Draw(e.Graphics, ClientRectangle, ThemeArea.Home, this);
     }
 }

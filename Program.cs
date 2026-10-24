@@ -1,16 +1,19 @@
 using System.Runtime.InteropServices;
 
-namespace Feather;
+namespace MBrowser;
 
 internal static class Program
 {
     [DllImport("kernel32.dll")]
     private static extern bool AttachConsole(int processId);
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
 
     [STAThread]
     private static int Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        SetCurrentProcessExplicitAppUserModelID("MIGLEcorp.MBrowser");
         if (args.Contains("--self-test"))
         {
             AttachConsole(-1);
@@ -19,12 +22,12 @@ internal static class Program
 
         bool smoke = args.Contains("--smoke-test");
         string dataPath = smoke
-            ? Path.Combine(Path.GetTempPath(), "Feather-smoke-" + Guid.NewGuid().ToString("N"))
+            ? Path.Combine(Path.GetTempPath(), "MBrowser-smoke-" + Guid.NewGuid().ToString("N"))
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FeatherBrowser");
-        using var instance = new Mutex(true, smoke ? "Local\\FeatherSmoke-" + Guid.NewGuid() : "Local\\FeatherBrowser", out bool first);
+        using var instance = new Mutex(true, smoke ? "Local\\MBrowserSmoke-" + Guid.NewGuid() : "Local\\FeatherBrowser", out bool first);
         if (!first)
         {
-            MessageBox.Show("Feather уже открыт. Используйте его окно на панели задач.", "Feather");
+            MessageBox.Show("MBrowser уже открыт. Используйте его окно на панели задач.", "MBrowser");
             return 0;
         }
 

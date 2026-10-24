@@ -3,7 +3,7 @@ using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
-namespace Feather;
+namespace MBrowser;
 
 internal sealed partial class MainForm
 {
@@ -109,6 +109,11 @@ internal sealed partial class MainForm
     internal void SelectTheme(BrowserTheme theme)
     {
         ThemeSettings.Select(theme, DataPath);
+        ApplyCurrentTheme();
+    }
+
+    private void ApplyCurrentTheme()
+    {
         Palette.Apply(this);
         if (_menu is not null) Palette.Apply(_menu);
         _home.RefreshTheme();

@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
-namespace Feather;
+namespace MBrowser;
 
 internal sealed partial class MainForm
 {

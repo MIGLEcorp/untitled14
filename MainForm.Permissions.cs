@@ -1,6 +1,6 @@
 using Microsoft.Web.WebView2.Core;
 
-namespace Feather;
+namespace MBrowser;
 
 internal sealed partial class MainForm
 {

@@ -5,8 +5,12 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyName>Feather.WebKit</AssemblyName>
-    <RootNamespace>Feather.WebKit</RootNamespace>
+    <AssemblyName>MBrowser.WebKit</AssemblyName>
+    <Product>MBrowser</Product>
+    <Title>MBrowser WebKit</Title>
+    <ApplicationIcon>..\..\assets\mbrowser.ico</ApplicationIcon>
+    <Version>4.0.0</Version>
+    <RootNamespace>MBrowser.WebKit</RootNamespace>
     <PlatformTarget>x64</PlatformTarget>
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <PlaywrightPlatform>win-x64</PlaywrightPlatform>

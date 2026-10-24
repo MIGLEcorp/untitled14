@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
-namespace Feather.Features;
+namespace MBrowser.Features;
 
 public sealed record PasswordEntry(Guid Id, string Title, string Url, string Username, string Password)
 {
@@ -183,7 +183,7 @@ internal static class WindowsDataProtection
             Marshal.Copy(data, 0, inputMemory, data.Length);
             var input = new Blob { Length = data.Length, Data = inputMemory };
             bool success = protect
-                ? Marshal.GetDelegateForFunctionPointer<Protect>(NativeLibrary.GetExport(library, "CryptProtectData"))(ref input, "Feather password vault", 0, 0, 0, 1, out output)
+                ? Marshal.GetDelegateForFunctionPointer<Protect>(NativeLibrary.GetExport(library, "CryptProtectData"))(ref input, "MBrowser password vault", 0, 0, 0, 1, out output)
                 : Marshal.GetDelegateForFunctionPointer<Unprotect>(NativeLibrary.GetExport(library, "CryptUnprotectData"))(ref input, 0, 0, 0, 0, 1, out output);
             if (!success) throw new CryptographicException("Windows не смог открыть хранилище паролей. Оно привязано к вашей учётной записи Windows.");
             var result = new byte[output.Length];

@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Text.Json;
 
-namespace Feather.Features;
+namespace MBrowser.Features;
 
 public sealed record CookiePartitionKey(string TopLevelSite, bool HasCrossSiteAncestor = false);
 

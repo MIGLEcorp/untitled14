@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Feather.Features;
+namespace MBrowser.Features;
 
 internal static class PasswordAutofillFeatureTests
 {

@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Feather;
+namespace MBrowser;
 
 public static class CoreTests
 {
@@ -8,7 +8,7 @@ public static class CoreTests
     {
         var passed = 0;
         var failed = 0;
-        var folder = Path.Combine(Path.GetTempPath(), "FeatherTests-" + Guid.NewGuid().ToString("N"));
+        var folder = Path.Combine(Path.GetTempPath(), "MBrowserTests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(folder);
 
         void Check(string name, Action action)
@@ -28,6 +28,7 @@ public static class CoreTests
 
         try
         {
+            ThemeTests.RunCore(Check, folder);
             Check("Address parsing: domains, ports, loopback and Unicode", () =>
             {
                 Resolves(" example.com ", "https://example.com/");

@@ -1,10 +1,10 @@
-﻿namespace Feather;
+namespace MBrowser;
 
 internal sealed partial class MainForm
 {
     private void BuildChrome()
     {
-        var toolbar = new TableLayoutPanel
+        var toolbar = new ThemeToolbar
         {
             Dock = DockStyle.Top, Height = 58, Padding = new Padding(10, 10, 10, 10),
             ColumnCount = 8, RowCount = 1, BackColor = Palette.Surface
@@ -25,7 +25,7 @@ internal sealed partial class MainForm
         toolbar.Controls.Add(home, 3, 0);
         foreach (var button in new[] { _back, _forward, _reload, home }) _tips.SetToolTip(button, button.AccessibleName);
 
-        var addressBox = new GlassPanel { Dock = DockStyle.Fill, BackColor = Palette.Raised, Padding = new Padding(12, 7, 12, 6), Margin = new Padding(5, 0, 7, 0) };
+        var addressBox = new GlassPanel { UseArtwork = false, Dock = DockStyle.Fill, BackColor = Palette.Raised, Padding = new Padding(12, 7, 12, 6), Margin = new Padding(5, 0, 7, 0) };
         _address.Dock = DockStyle.Fill;
         _address.BorderStyle = BorderStyle.None;
         _address.BackColor = Palette.Raised;
@@ -51,6 +51,7 @@ internal sealed partial class MainForm
         var menu = Palette.Button("☰", "Меню");
         menu.Click += (_, _) => ShowMainMenu();
         toolbar.Controls.Add(menu, 7, 0);
+        foreach (Control control in toolbar.Controls) if (control is Button) control.BackColor = Color.Transparent;
         _viewport.Controls.Add(_home);
         Controls.Add(_viewport);
         Controls.Add(_bookmarkBar);

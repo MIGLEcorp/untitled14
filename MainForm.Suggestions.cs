@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Feather;
+namespace MBrowser;
 
 internal sealed partial class MainForm
 {

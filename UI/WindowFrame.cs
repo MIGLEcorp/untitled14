@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 
-namespace Feather;
+namespace MBrowser;
 
 /// <summary>Borderless native window with resizing, snapping and custom caption buttons.</summary>
 internal class BrowserWindow : Form
@@ -49,8 +49,8 @@ internal class BrowserWindow : Form
 
     protected void InitializeWindowFrame(TabStrip tabs)
     {
-        var frame = new Panel { Dock = DockStyle.Top, Height = 48, BackColor = Palette.Background, AccessibleName = "Заголовок окна" };
-        var captions = new Panel { Dock = DockStyle.Right, Width = 138, BackColor = Palette.Background };
+        var frame = new ThemePanel { Dock = DockStyle.Top, Height = 48, BackColor = Palette.Background, AccessibleName = "Заголовок окна" };
+        var captions = new Panel { Dock = DockStyle.Right, Width = 138, BackColor = Color.Transparent };
         var minimize = new CaptionButton(CaptionGlyph.Minimize) { AccessibleName = "Свернуть", Dock = DockStyle.Left };
         _maximize = new CaptionButton(CaptionGlyph.Maximize) { AccessibleName = "Развернуть или восстановить", Dock = DockStyle.Left };
         var close = new CaptionButton(CaptionGlyph.Close) { AccessibleName = "Закрыть окно", Dock = DockStyle.Left };
@@ -138,13 +138,22 @@ internal class BrowserWindow : Form
         base.OnResize(e);
         Padding = IsFullScreen || WindowState == FormWindowState.Maximized ? Padding.Empty : new Padding(5);
         _maximize?.Invalidate();
+        Invalidate(true);
     }
 
     protected override void WndProc(ref Message message)
     {
         // Both NCCALCSIZE variants describe the entire client area. Letting the RECT
         // variant reach DefWindowProc can reserve a native frame during menu changes.
-        if (message.Msg == WmNcCalcSize || message.Msg == WmNcPaint)
+        if (message.Msg == WmNcCalcSize)
+        {
+            // Returning zero with wParam=TRUE preserves old client pixels. Our
+            // cover backgrounds change everywhere on resize, so none remain valid.
+            // https://learn.microsoft.com/windows/win32/winmsg/wm-nccalcsize
+            message.Result = message.WParam != 0 ? (nint)0x0300 /* WVR_REDRAW */ : 0;
+            return;
+        }
+        if (message.Msg == WmNcPaint)
         {
             message.Result = 0;
             return;
@@ -210,7 +219,8 @@ internal class BrowserWindow : Form
             Height = 48;
             FlatStyle = FlatStyle.Flat;
             FlatAppearance.BorderSize = 0;
-            BackColor = Palette.Background;
+            SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.OptimizedDoubleBuffer, true);
+            BackColor = Color.Transparent;
             ForeColor = Palette.Text;
             TabStop = false;
             Cursor = Cursors.Hand;
@@ -220,7 +230,8 @@ internal class BrowserWindow : Form
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
-            g.Clear(_hover ? _glyph == CaptionGlyph.Close ? Color.FromArgb(193, 48, 73) : Palette.Raised : Palette.Background);
+            base.OnPaintBackground(e);
+            if (_hover) { using var fill = new SolidBrush(_glyph == CaptionGlyph.Close ? Color.FromArgb(193, 48, 73) : Palette.Raised); g.FillRectangle(fill, ClientRectangle); }
             using var pen = new Pen(_hover && _glyph == CaptionGlyph.Close ? Color.White : Palette.Text, 1.15f);
             int x = Width / 2 - 5, y = Height / 2 - 5;
             if (_glyph == CaptionGlyph.Minimize) g.DrawLine(pen, x, y + 5, x + 10, y + 5);

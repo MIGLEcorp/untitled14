@@ -1,43 +1,13 @@
-﻿using System.Drawing.Drawing2D;
+using System.Drawing.Drawing2D;
 
-namespace Feather;
-
-/// <summary>Original, human-drawn artwork. Attribution is shipped next to the images.</summary>
-internal static class AnimeArtwork
-{
-    private static Image? _wallpaper;
-    internal static string FileName { get; set; } = "rain-city.jpg";
-    internal static void ReleaseBackdrop() { _wallpaper?.Dispose(); _wallpaper = null; }
-    internal static Image? Wallpaper
-    {
-        get
-        {
-            if (_wallpaper is not null) return _wallpaper;
-            string path = Path.Combine(AppContext.BaseDirectory, "assets", FileName);
-            if (!File.Exists(path)) return null;
-            using var stream = File.OpenRead(path);
-            using var image = Image.FromStream(stream);
-            double scale = Math.Min(1, Math.Min(2048d / image.Width, 1152d / image.Height));
-            _wallpaper = new Bitmap(image, new Size(Math.Max(1, (int)(image.Width * scale)), Math.Max(1, (int)(image.Height * scale))));
-            return _wallpaper;
-        }
-    }
-    internal static bool DrawBackdrop(Graphics g, Rectangle bounds)
-    {
-        if (bounds.Width < 1 || bounds.Height < 1 || Wallpaper is not { } image) return false;
-        float scale = Math.Max(bounds.Width / (float)image.Width, bounds.Height / (float)image.Height);
-        float width = image.Width * scale, height = image.Height * scale;
-        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-        g.DrawImage(image, bounds.X + (bounds.Width - width) / 2, bounds.Y + (bounds.Height - height) / 2, width, height);
-        return true;
-    }
-}
+namespace MBrowser;
 
 internal class GlassPanel : Panel
 {
+    internal bool UseArtwork = true;
     internal GlassPanel()
     {
-        DoubleBuffered = true;
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         Padding = new Padding(14);
         BackColor = Palette.Surface;
     }
@@ -53,9 +23,7 @@ internal class GlassPanel : Panel
     protected override void OnPaintBackground(PaintEventArgs e)
     {
         e.Graphics.Clear(Palette.Surface);
-        if (ThemeSettings.Current == BrowserTheme.Anime) AnimeArtwork.DrawBackdrop(e.Graphics, ClientRectangle);
-        using var tint = new SolidBrush(Color.FromArgb(218, Palette.Surface));
-        e.Graphics.FillRectangle(tint, ClientRectangle);
+        if (UseArtwork) ThemeMedia.Draw(e.Graphics, ClientRectangle, ThemeArea.Menu, this);
     }
     protected override void OnPaint(PaintEventArgs e)
     {

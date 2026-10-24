@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <AssemblyName>MBrowser</AssemblyName>
+    <Product>MBrowser</Product>
+    <Title>MBrowser</Title>
+    <Description>MBrowser — web browser</Description>
+    <Company>MIGLEcorp</Company>
+    <ApplicationIcon>assets\mbrowser.ico</ApplicationIcon>
+    <RootNamespace>MBrowser</RootNamespace>
+    <Version>4.0.0</Version>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />
+    <Content Include="assets\*.jpg;assets\mbrowser.ico;assets\ATTRIBUTION.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Compile Remove="Features\**\*.cs;Engine\WebKitPreview\**\*.cs" />
+    <ProjectReference Include="Features\MBrowser.Features.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;PublishDir" />
+    <Content Include="Features\bin\$(Configuration)\net10.0-windows\MBrowser.Features.dll" Link="Modules\MBrowser.Features.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <!-- This WebView2 SDK also adds WPF by default. MBrowser uses WinForms only. -->
+  <Target Name="RemoveUnusedWpfReference" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Reference.Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+    </ItemGroup>
+  </Target>
+</Project>

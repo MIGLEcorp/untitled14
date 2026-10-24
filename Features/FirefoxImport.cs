@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace Feather.Features;
+namespace MBrowser.Features;
 
 internal static class FirefoxImport
 {

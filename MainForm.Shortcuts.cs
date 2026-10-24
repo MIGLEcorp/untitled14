@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace Feather;
+namespace MBrowser;
 
 internal sealed partial class MainForm
 {

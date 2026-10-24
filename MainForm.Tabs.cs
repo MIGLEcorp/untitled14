@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Microsoft.Web.WebView2.WinForms;
 
-namespace Feather;
+namespace MBrowser;
 
 internal sealed partial class MainForm
 {

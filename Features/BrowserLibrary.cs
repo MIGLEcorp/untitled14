@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Feather.Features;
+namespace MBrowser.Features;
 
 /// <summary>On-demand dialogs. The host can unload this assembly after each modal operation.</summary>
 public sealed partial class BrowserLibrary
@@ -47,7 +47,7 @@ public sealed partial class BrowserLibrary
         })));
         buttons.Controls.Add(FeatureUi.Button("Экспорт HTML", () => Guard(dialog, () =>
         {
-            using var file = new SaveFileDialog { Filter = "Закладки HTML|*.html", FileName = "Feather-bookmarks.html", DefaultExt = "html" };
+            using var file = new SaveFileDialog { Filter = "Закладки HTML|*.html", FileName = "MBrowser-bookmarks.html", DefaultExt = "html" };
             if (file.ShowDialog(dialog) == DialogResult.OK) bookmarks.ExportHtml(file.FileName);
         })));
         dialog.Controls.Add(list);
@@ -251,7 +251,7 @@ internal static class FeatureUi
     }
 
     internal static Label Note(string text) => new() { Text = text, Dock = DockStyle.Top, Height = 76, Padding = new Padding(10), AutoEllipsis = true };
-    internal static void Info(IWin32Window owner, string text) => MessageBox.Show(owner, text, "Feather", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    internal static void Info(IWin32Window owner, string text) => MessageBox.Show(owner, text, "MBrowser", MessageBoxButtons.OK, MessageBoxIcon.Information);
     internal static void Error(IWin32Window owner, string text) => MessageBox.Show(owner, text, "Не удалось выполнить действие", MessageBoxButtons.OK, MessageBoxIcon.Error);
 
     internal static string[]? EditFields(IWin32Window owner, string title, (string Label, string Value, bool Secret)[] fields)

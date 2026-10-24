@@ -1,10 +1,10 @@
 using System.Text.Json;
 
-namespace Feather;
+namespace MBrowser;
 
 internal sealed partial class MainForm
 {
-    private readonly FlowLayoutPanel _bookmarkBar = new() { Dock = DockStyle.Top, Height = 37, WrapContents = false,
+    private readonly ThemeBookmarks _bookmarkBar = new() { Dock = DockStyle.Top, Height = 37, WrapContents = false,
         AutoScroll = false, Padding = new Padding(8, 1, 8, 1), BackColor = Palette.Surface };
     private bool _layingOutBookmarks;
     private FaviconCache? _faviconCache;
@@ -19,7 +19,15 @@ internal sealed partial class MainForm
         _bookmarkBar.Layout += (_, _) => LayoutBookmarkItems();
         AttachSuggestions(_address);
         AttachSuggestions(_home.SearchBox);
-        _viewport.Resize += (_, _) => CloseOverlay();
+        _viewport.Resize += (_, _) =>
+        {
+            if (_overlay is ThemeEditor editor)
+            {
+                editor.Size = new Size(Math.Min(570, Math.Max(240, _viewport.Width - 24)), Math.Min(700, Math.Max(90, _viewport.Height - 24)));
+                editor.Location = new Point(Math.Max(10, _viewport.Width - editor.Width - 12), 10);
+            }
+            else CloseOverlay();
+        };
     }
 
     internal void RefreshBookmarks()

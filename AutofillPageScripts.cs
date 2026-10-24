@@ -1,4 +1,4 @@
-namespace Feather;
+namespace MBrowser;
 
 /// <summary>Shared login detection for the native prompt and the short-lived vault module.</summary>
 internal static class AutofillPageScripts

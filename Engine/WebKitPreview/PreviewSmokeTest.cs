@@ -1,6 +1,6 @@
 using Microsoft.Playwright;
 
-namespace Feather.WebKit;
+namespace MBrowser.WebKit;
 
 internal static class PreviewSmokeTest
 {
@@ -19,7 +19,7 @@ internal static class PreviewSmokeTest
         await context.RouteAsync("https://feather-webkit.test/**", async route => await route.FulfillAsync(new()
         {
             ContentType = "text/html",
-            Body = "<!doctype html><meta charset='utf-8'><title>Feather WebKit smoke</title>" +
+            Body = "<!doctype html><meta charset='utf-8'><title>MBrowser WebKit smoke</title>" +
                    "<h1 id='result'>WebKit</h1><script>document.querySelector('#result').textContent += ' JavaScript';</script>"
         }));
         var page = await context.NewPageAsync();

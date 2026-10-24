@@ -1,4 +1,4 @@
-# Движки Feather
+# Движки MBrowser
 
 Основные вкладки используют системный **Microsoft Edge WebView2 (Chromium)**.
 Команда меню **«WebKit — экспериментальное окно»** открывает текущий адрес в
@@ -21,12 +21,12 @@ WebView2 не переименован в WebKit; движок основных 
 
 Это **экспериментальный просмотр**, а не полноценная замена движка вкладок.
 Playwright предназначен для автоматизации и тестирования, использует собственные
-патчи WebKit и не является Safari. В этом отдельном окне нет панели вкладок Feather,
+патчи WebKit и не является Safari. В этом отдельном окне нет панели вкладок MBrowser,
 его закладок, импорта, менеджера паролей и интеграции загрузок. Cookies двух движков
 не синхронизируются. Поддержка мультимедиа зависит от Windows и сборки WebKit.
 
 Текущий Playwright официально поддерживает Windows 11+ / Windows Server 2019+;
-основной Feather и экспериментальный модуль могут иметь разные требования.
+основной MBrowser и экспериментальный модуль могут иметь разные требования.
 WebKit здесь не получает обновления вместе с системным WebView2. При обновлении
 закреплённого пакета Playwright нужно повторно установить соответствующую версию
 WebKit. Не используйте старые WebKit.NET, QtWebKit или Safari для Windows как замену.
@@ -40,11 +40,11 @@ WinForms-контрол, аналогичный WebView2, этим способ�
 
 `build.ps1` помещает отдельный модуль в `dist\Features\WebKit`. При запуске из
 исходников пункт меню может собрать модуль отдельно при наличии .NET SDK 10.
-Пакет закреплён в `Engine\WebKitPreview\Feather.WebKit.csproj`.
+Пакет закреплён в `Engine\WebKitPreview\MBrowser.WebKit.csproj`.
 
 ```powershell
-dotnet publish .\Engine\WebKitPreview\Feather.WebKit.csproj -c Release -r win-x64 --self-contained false -o .\dist\Features\WebKit
-.\dist\Features\WebKit\Feather.WebKit.exe --url https://example.com/
+dotnet publish .\Engine\WebKitPreview\MBrowser.WebKit.csproj -c Release -r win-x64 --self-contained false -o .\dist\Features\WebKit
+.\dist\Features\WebKit\MBrowser.WebKit.exe --url https://example.com/
 ```
 
 Предварительно установить только движок:
@@ -62,8 +62,8 @@ CLI модуля: `--url URL`, `--profile PATH`, `--browsers-path PATH`, `--inst
 Временные пути позволяют проверить движок без профиля пользователя:
 
 ```powershell
-$webKitTestRoot = Join-Path $env:TEMP 'Feather-WebKit-test'
-$webKitHelper = '.\dist\Features\WebKit\Feather.WebKit.exe'
+$webKitTestRoot = Join-Path $env:TEMP 'MBrowser-WebKit-test'
+$webKitHelper = '.\dist\Features\WebKit\MBrowser.WebKit.exe'
 Start-Process $webKitHelper -ArgumentList @('--install', '--browsers-path', ('"' + $webKitTestRoot + '\browsers"')) -WindowStyle Hidden -Wait
 Start-Process $webKitHelper -ArgumentList @('--smoke-test', '--browsers-path', ('"' + $webKitTestRoot + '\browsers"'), '--result', ('"' + $webKitTestRoot + '\result.json"')) -WindowStyle Hidden -Wait
 Get-Content (Join-Path $webKitTestRoot 'result.json')

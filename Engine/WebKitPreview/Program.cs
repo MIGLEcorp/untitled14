@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Playwright;
 
-namespace Feather.WebKit;
+namespace MBrowser.WebKit;
 
 internal static class Program
 {
@@ -27,7 +27,7 @@ internal static class Program
             using var instance = new Mutex(true, "Local\\FeatherWebKit-" + profileId, out bool first);
             if (!first)
             {
-                MessageBox.Show("Экспериментальное окно WebKit уже открыто.", "Feather · WebKit");
+                MessageBox.Show("Экспериментальное окно WebKit уже открыто.", "MBrowser · WebKit");
                 return 0;
             }
 
@@ -38,7 +38,7 @@ internal static class Program
                     "Для экспериментального WebKit нужно один раз скачать движок с серверов Microsoft. " +
                     "Потребуется несколько сотен МБ на диске.\n\n" +
                     "Это тестовая сборка Playwright в отдельном окне и профиле. Скачать сейчас?",
-                    "Feather · установка WebKit", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                    "MBrowser · установка WebKit", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
                 if (answer != DialogResult.Yes)
                     return 0;
                 using var progress = new InstallProgressWindow();
@@ -58,7 +58,7 @@ internal static class Program
                 WriteResult(resultPath, new { passed = false, error = message });
             else
                 MessageBox.Show("Не удалось открыть WebKit.\n\n" + message,
-                    "Feather · WebKit", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    "MBrowser · WebKit", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
     }
@@ -87,7 +87,7 @@ internal static class Program
         {
             // Retain the engine's own error page so the user can inspect a network failure.
             MessageBox.Show("WebKit открыт, но страница не загрузилась.\n\n" + error.Message,
-                "Feather · WebKit", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                "MBrowser · WebKit", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         await closed.Task;
     }

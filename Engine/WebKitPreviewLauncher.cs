@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace Feather.Engine;
+namespace MBrowser.Engine;
 
 /// <summary>No Playwright assembly is referenced or loaded by the main browser.</summary>
 internal static class WebKitPreviewLauncher
@@ -14,7 +14,7 @@ internal static class WebKitPreviewLauncher
             || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
             || !string.IsNullOrEmpty(uri.UserInfo))
         {
-            MessageBox.Show(owner, "Откройте HTTP/HTTPS-страницу, затем выберите WebKit.", "Feather · WebKit");
+            MessageBox.Show(owner, "Откройте HTTP/HTTPS-страницу, затем выберите WebKit.", "MBrowser · WebKit");
             return;
         }
 
@@ -35,13 +35,13 @@ internal static class WebKitPreviewLauncher
         catch (Exception error)
         {
             MessageBox.Show(owner, "Не удалось запустить экспериментальное окно WebKit.\n\n" + error.Message,
-                "Feather · WebKit", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                "MBrowser · WebKit", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
     private static async Task<string> FindOrBuildHelperAsync(IWin32Window owner)
     {
-        string bundled = Path.Combine(AppContext.BaseDirectory, "Features", "WebKit", "Feather.WebKit.exe");
+        string bundled = Path.Combine(AppContext.BaseDirectory, "Features", "WebKit", "MBrowser.WebKit.exe");
         if (File.Exists(bundled))
             return bundled;
 
@@ -50,7 +50,7 @@ internal static class WebKitPreviewLauncher
         if (project is null)
             throw new FileNotFoundException("Модуль Features\\WebKit отсутствует. Выполните build.ps1 или восстановите полную папку дистрибутива.");
         string output = Path.Combine(Path.GetDirectoryName(project)!, "bin", "Release", "net10.0-windows", "win-x64", "publish");
-        string executable = Path.Combine(output, "Feather.WebKit.exe");
+        string executable = Path.Combine(output, "MBrowser.WebKit.exe");
         await BuildLock.WaitAsync();
         try
         {
@@ -86,7 +86,7 @@ internal static class WebKitPreviewLauncher
     {
         for (var folder = new DirectoryInfo(AppContext.BaseDirectory); folder is not null; folder = folder.Parent)
         {
-            string path = Path.Combine(folder.FullName, "Engine", "WebKitPreview", "Feather.WebKit.csproj");
+            string path = Path.Combine(folder.FullName, "Engine", "WebKitPreview", "MBrowser.WebKit.csproj");
             if (File.Exists(path))
                 return path;
         }

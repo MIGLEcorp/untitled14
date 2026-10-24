@@ -1,13 +1,13 @@
-﻿param([switch]$Installer)
+param([switch]$Installer)
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
     $target = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'dist'))
     if ($target -ne ([IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\') + '\dist')) { throw 'Unexpected output path.' }
     if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
-    dotnet publish .\Feather.csproj -c Release -r win-x64 --self-contained true -o .\dist --nologo
-    if ($LASTEXITCODE -ne 0) { throw 'Feather publish failed.' }
-    dotnet publish .\Engine\WebKitPreview\Feather.WebKit.csproj -c Release -r win-x64 --self-contained true -o .\dist\Features\WebKit --nologo
+    dotnet publish .\MBrowser.csproj -c Release -r win-x64 --self-contained true -o .\dist --nologo
+    if ($LASTEXITCODE -ne 0) { throw 'MBrowser publish failed.' }
+    dotnet publish .\Engine\WebKitPreview\MBrowser.WebKit.csproj -c Release -r win-x64 --self-contained true -o .\dist\Features\WebKit --nologo
     if ($LASTEXITCODE -ne 0) { throw 'WebKit helper publish failed.' }
     Copy-Item -LiteralPath .\README.md, .\ENGINE.md -Destination .\dist
     Copy-Item -LiteralPath .\extensions -Destination .\dist\extensions -Recurse
@@ -23,8 +23,8 @@ try {
             Invoke-WebRequest -UseBasicParsing 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile '.\bin\tools\MicrosoftEdgeWebview2Setup.exe'
         }
         if ((Get-AuthenticodeSignature -LiteralPath '.\bin\tools\MicrosoftEdgeWebview2Setup.exe').Status -ne 'Valid') { throw 'WebView2 bootstrapper signature is invalid.' }
-        & $compiler .\installer\Feather.iss
+        & $compiler .\installer\MBrowser.iss
         if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }
     }
-    Write-Host "Ready: $PSScriptRoot\dist\Feather.exe"
+    Write-Host "Ready: $PSScriptRoot\dist\MBrowser.exe"
 } finally { Pop-Location }

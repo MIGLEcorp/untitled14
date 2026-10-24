@@ -1,4 +1,4 @@
-namespace Feather;
+namespace MBrowser;
 
 internal sealed partial class MainForm
 {
@@ -15,7 +15,7 @@ internal sealed partial class MainForm
         if (overlay is null) return;
         _viewport.Controls.Remove(overlay);
         overlay.Dispose();
-        if (!_home.Visible) AnimeArtwork.ReleaseBackdrop();
+        if (!_home.Visible) ThemeMedia.Release(ThemeArea.Home);
     }
 
     private void ShowOverlay(Control panel, Point location)
@@ -32,7 +32,7 @@ internal sealed partial class MainForm
     internal void ShowMainMenu()
     {
         if (IsInternalMenuVisible) { CloseOverlay(); return; }
-        ShowMenuPage("Feather", rows =>
+        ShowMenuPage("MBrowser", rows =>
         {
             rows("Новая вкладка", () => RunUi(() => OpenTabAsync()));
             rows(IsFullScreen ? "Выйти из полного экрана" : "Полный экран", ToggleFullScreen);
@@ -41,6 +41,8 @@ internal sealed partial class MainForm
             rows("Импорт данных…", ShowImport);
             rows("Загрузки", ShowDownloads);
             rows("Оформление  ›", ShowThemeMenu);
+            rows("Подсказки DuckDuckGo: " + (_preferences.NetworkSuggestions ? "вкл." : "выкл."), () =>
+            { _preferences.NetworkSuggestions = !_preferences.NetworkSuggestions; _preferences.Save(DataPath); });
             rows("Заморозить фоновые вкладки", () => RunUi(UnloadBackgroundTabsAsync));
             rows("Разрешения сайтов  ›", ShowPermissionSettings);
             rows("Расширения  ›", () => RunUi(ShowExtensionsAsync));
@@ -74,24 +76,11 @@ internal sealed partial class MainForm
         _menu = panel;
     }
 
-    private void ShowThemeMenu() => ShowMenuPage("Оформление", add =>
+    internal void ShowThemeMenu()
     {
-        foreach (var (name, theme) in new[] { ("Иллюстрации", BrowserTheme.Anime), ("Тёмная", BrowserTheme.Dark), ("Светлая", BrowserTheme.Light) })
-            add(name, () => SelectTheme(theme));
-        add("Обои: Rain City", () => SetWallpaper("rain-city.jpg"));
-        add("Обои: Save Point", () => SetWallpaper("save-point.jpg"));
-        add("Авторы и лицензии", () => ShowMenuPage("David Revoy · CC BY 4.0", credit =>
-            credit("Открыть сайт автора", () => RunUi(() => OpenTabAsync("https://www.peppercarrot.com/en/wallpapers/")))));
-        add("Подсказки DuckDuckGo: " + (_preferences.NetworkSuggestions ? "вкл." : "выкл."), () =>
-        { _preferences.NetworkSuggestions = !_preferences.NetworkSuggestions; _preferences.Save(DataPath); });
-    });
-
-    private void SetWallpaper(string file)
-    {
-        AnimeArtwork.ReleaseBackdrop();
-        AnimeArtwork.FileName = file;
-        _preferences.Wallpaper = file;
-        _preferences.Save(DataPath);
-        _home.Invalidate(true);
+        CloseOverlay();
+        var editor = new ThemeEditor(DataPath, ApplyCurrentTheme, CloseOverlay);
+        ShowOverlay(editor, new Point(_viewport.Width - editor.Width - 12, 10));
+        _menu = editor;
     }
 }
