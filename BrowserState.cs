@@ -12,6 +12,9 @@ public sealed class BrowserTab
     public string Title { get; set; } = "Новая вкладка";
     public List<string> History { get; set; } = [];
     public int HistoryIndex { get; set; } = -1;
+    // Only scroll coordinates are persisted when a page is unloaded; form values are never serialized.
+    public double ScrollX { get; set; }
+    public double ScrollY { get; set; }
 
     [JsonIgnore]
     public string? CurrentUrl => HistoryIndex >= 0 && HistoryIndex < History.Count ? History[HistoryIndex] : null;
@@ -220,7 +223,9 @@ public static class SessionStore
                 Id = tab.Id != Guid.Empty && ids.Add(tab.Id) ? tab.Id : Guid.NewGuid(),
                 Title = string.IsNullOrWhiteSpace(tab.Title) ? "Новая вкладка" : tab.Title[..Math.Min(tab.Title.Length, 300)],
                 History = [],
-                HistoryIndex = -1
+                HistoryIndex = -1,
+                ScrollX = double.IsFinite(tab.ScrollX) ? Math.Clamp(tab.ScrollX, 0, 100_000_000) : 0,
+                ScrollY = double.IsFinite(tab.ScrollY) ? Math.Clamp(tab.ScrollY, 0, 100_000_000) : 0
             };
             ids.Add(copy.Id);
             var source = tab.History ?? [];

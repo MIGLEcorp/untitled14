@@ -55,6 +55,7 @@ internal static class SmokeTests
                 bitmap.Save(previewPath, ImageFormat.Png);
             }
             Check(File.Exists(previewPath), "Native home preview saved");
+            await WindowFrameTests.RunAsync(form, Check);
 
             await using var server = new LocalPageServer();
             string one = server.Origin + "one";
@@ -74,6 +75,51 @@ internal static class SmokeTests
             }
             await Task.Delay(600);
             Sample("one-local-page");
+            Check(form.ActiveCore!.Settings.IsPasswordAutosaveEnabled && form.ActiveCore.Settings.IsGeneralAutofillEnabled,
+                "Native password-save prompts and form autofill are enabled");
+            var beforeFullscreen = form.Bounds;
+            form.ToggleFullScreen();
+            Check(form.IsFullScreen && form.Bounds == Screen.FromControl(form).Bounds,
+                "Fullscreen fills the monitor and hides browser chrome");
+            form.ToggleFullScreen();
+            Check(!form.IsFullScreen && form.Bounds == beforeFullscreen,
+                "Leaving fullscreen restores the original window bounds");
+            var themedCore = form.ActiveCore;
+            form.SelectTheme(BrowserTheme.Light);
+            Check(form.ActiveCore == themedCore && themedCore.Profile.PreferredColorScheme == CoreWebView2PreferredColorScheme.Light,
+                "Changing theme updates native chrome and page preference without recreating the tab");
+            form.SelectTheme(BrowserTheme.Anime);
+            await form.ApplyCookiesAsync(JsonSerializer.Serialize(new[] { new
+            {
+                Domain = "127.0.0.1", Name = "feather_smoke", Value = "fixture-only", Path = "/",
+                IsSecure = false, IsHttpOnly = true, ExpiresUtc = (DateTimeOffset?)null, SameSite = "Lax"
+            } }));
+            var importedCookies = await form.ActiveCore.CookieManager.GetCookiesAsync(one);
+            Check(importedCookies.Any(cookie => cookie.Name == "feather_smoke" && cookie.Value == "fixture-only" && cookie.IsHttpOnly),
+                "Cookie import writes real session cookies with HttpOnly preserved");
+
+            string partitionReport = await form.ApplyCookiesAsync("""
+                [
+                  {"Domain":"third.feather.test","Name":"feather_partition","Value":"fixture-one","Path":"/","IsSecure":true,"IsHttpOnly":true,"ExpiresUtc":null,"SameSite":"None","PartitionKey":{"TopLevelSite":"https://one.test","HasCrossSiteAncestor":false}},
+                  {"Domain":"third.feather.test","Name":"feather_partition","Value":"fixture-two","Path":"/","IsSecure":true,"IsHttpOnly":true,"ExpiresUtc":null,"SameSite":"None","PartitionKey":{"TopLevelSite":"https://two.test","HasCrossSiteAncestor":true}},
+                  {"Domain":"third.feather.test","Name":"feather_partition_unsafe","Value":"fixture-rejected","Path":"/","IsSecure":false,"IsHttpOnly":true,"ExpiresUtc":null,"SameSite":"Lax","PartitionKey":{"TopLevelSite":"https://one.test","HasCrossSiteAncestor":false}}
+                ]
+                """);
+            using (var cookieStorage = JsonDocument.Parse(await form.ActiveCore.CallDevToolsProtocolMethodAsync("Storage.getCookies", "{}")))
+            {
+                var partitions = cookieStorage.RootElement.GetProperty("cookies").EnumerateArray()
+                    .Where(cookie => cookie.GetProperty("name").GetString() == "feather_partition").ToList();
+                Check(partitions.Count == 2 && partitions.All(cookie => cookie.TryGetProperty("partitionKey", out _) &&
+                    cookie.GetProperty("domain").GetString() == "third.feather.test" && cookie.GetProperty("httpOnly").GetBoolean() && cookie.GetProperty("session").GetBoolean()) &&
+                    partitions.Any(cookie => cookie.GetProperty("partitionKey").GetProperty("topLevelSite").GetString() == "https://one.test" &&
+                        !cookie.GetProperty("partitionKey").GetProperty("hasCrossSiteAncestor").GetBoolean()) &&
+                    partitions.Any(cookie => cookie.GetProperty("partitionKey").GetProperty("topLevelSite").GetString() == "https://two.test" &&
+                        cookie.GetProperty("partitionKey").GetProperty("hasCrossSiteAncestor").GetBoolean()),
+                    "Cookie import retains CHIPS sites, ancestor bits, host-only scope and session flags in real WebView2");
+                Check(!cookieStorage.RootElement.GetProperty("cookies").EnumerateArray().Any(cookie => cookie.GetProperty("name").GetString() == "feather_partition_unsafe") &&
+                    partitionReport.Contains("импортированы: 2", StringComparison.Ordinal) && partitionReport.Contains("отклонено движком: 1", StringComparison.Ordinal),
+                    "Unsupported partitions are reported accurately and never become ordinary cookies");
+            }
 
             await form.ActiveCore!.ExecuteScriptAsync("document.getElementById('next').click()");
             await WaitForPageAsync(form, two, "Feather smoke two");
@@ -143,12 +189,34 @@ internal static class SmokeTests
             Check(true, "Restoring the window sets the WebView2 memory target to Normal");
 
             int initialTabs = form.TabCount;
+            var retainedCore = form.ActiveCore;
+            await form.ActiveCore!.ExecuteScriptAsync("window.retainedProbe='tab-state';scrollTo(0,600)");
             await form.OpenTabAsync();
-            Check(form.TabCount == initialTabs + 1 && form.LiveViewCount == 0,
-                "Opening a native blank tab disposes the previous live control");
+            Check(form.TabCount == initialTabs + 1 && form.LiveViewCount == 1 && form.ActiveCore is null,
+                "Opening a native blank tab retains the previous page in the background");
             await form.SelectTabAsync(0);
             await WaitForPageAsync(form, two, "Feather smoke two");
-            Check(form.LiveViewCount == 1, "Selecting a sleeping tab recreates its webpage");
+            Check(form.ActiveCore == retainedCore && await form.ActiveCore!.ExecuteScriptAsync("window.retainedProbe") == "\"tab-state\"",
+                "Switching back preserves the same live DOM and JavaScript state");
+            await form.SelectTabAsync(1);
+            await form.UnloadIdleTabsAsync(DateTimeOffset.UtcNow.AddMinutes(4));
+            Check(form.LiveViewCount == 1, "Background page remains resident before the five-minute timeout");
+            await form.UnloadIdleTabsAsync(DateTimeOffset.UtcNow.AddMinutes(6));
+            Check(form.LiveViewCount == 0, "Idle background page is disposed after the configured timeout");
+            await form.SelectTabAsync(0);
+            await WaitForPageAsync(form, two, "Feather smoke two");
+            Check(form.ActiveCore != retainedCore && await form.ActiveCore!.ExecuteScriptAsync("window.retainedProbe") == "null",
+                "An evicted tab is recreated only when selected");
+            await WaitForScriptValueAsync(form, "scrollY", "600");
+            Check(true, "An evicted page restores its scroll position after reloading");
+            await form.ActiveCore!.ExecuteScriptAsync("let draft=document.createElement('input');draft.id='draft';document.body.append(draft);draft.value='unsaved';");
+            await form.SelectTabAsync(1);
+            await form.UnloadIdleTabsAsync(DateTimeOffset.UtcNow.AddMinutes(6));
+            Check(form.LiveViewCount == 1, "Unsaved form input protects a background tab from automatic eviction");
+            await form.SelectTabAsync(0);
+            Check(await form.ActiveCore!.ExecuteScriptAsync("document.getElementById('draft').value") == "\"unsaved\"",
+                "Protected form data survives a background interval");
+            await form.ActiveCore.ExecuteScriptAsync("document.getElementById('draft').remove()");
             await form.CloseTabAsync(form.TabCount - 1);
             Check(form.TabCount == initialTabs && form.LiveViewCount == 1,
                 "Closing an inactive tab preserves the active webpage");
@@ -158,23 +226,27 @@ internal static class SmokeTests
                 string address = i % 2 == 0 ? one : two;
                 await form.OpenTabAsync(address);
                 await WaitForPageAsync(form, address, i % 2 == 0 ? "Feather smoke one" : "Feather smoke two");
-                if (form.LiveViewCount != 1)
-                    throw new InvalidOperationException($"Expected one live WebView2 after adding tab {i + 1}, got {form.LiveViewCount}.");
+                if (form.LiveViewCount > 8)
+                    throw new InvalidOperationException($"Resident tab budget exceeded after adding tab {i + 1}: {form.LiveViewCount}.");
             }
-            Check(form.TabCount == initialTabs + 20 && form.LiveViewCount == 1,
-                "Twenty background page entries retain only one live WebView2 control");
+            Check(form.TabCount == initialTabs + 20 && form.LiveViewCount == 8,
+                "Twenty-one open tabs keep at most eight ordinary pages resident");
+            await form.UnloadIdleTabsAsync(DateTimeOffset.UtcNow.AddMinutes(6));
+            Check(form.LiveViewCount == 1, "Timed eviction leaves only the active page after many background tabs");
             await Task.Delay(1200);
             Sample("twenty-sleeping-tabs-and-one-active");
 
             int lastTab = form.TabCount - 1;
             await Task.WhenAll(form.SelectTabAsync(0), form.SelectTabAsync(1), form.SelectTabAsync(lastTab));
             await WaitForPageAsync(form, two, "Feather smoke two");
-            Check(form.LiveViewCount == 1 && form.TabCount == initialTabs + 20,
+            Check(form.LiveViewCount <= 3 && form.TabCount == initialTabs + 20,
                 "Rapid tab switches serialize without leaking controls or losing tabs");
             Check(await form.ActiveCore!.ExecuteScriptAsync("window.smokeProbe") == "42",
                 "JavaScript remains operational after rapid tab switches");
 
             await form.HomeAsync();
+            await WaitUntilAsync(() => !form.HasLoadingTabs, "Background pages did not finish loading");
+            await form.UnloadBackgroundTabsAsync();
             Check(form.LiveViewCount == 0 && form.ActiveCore is null,
                 "Returning home releases all live WebView2 controls");
             await Task.Delay(1200);
@@ -186,6 +258,45 @@ internal static class SmokeTests
             Check(form.TabCount == 1 && form.LiveViewCount == 0 && form.ActiveCore is null &&
                   form.ActiveTab.CurrentUrl is null or "about:blank",
                 "Closing the last tab leaves one native blank tab without a WebView2 control");
+
+            await form.NavigateInputAsync(one);
+            await WaitForPageAsync(form, one, "Feather smoke one");
+            await form.ActiveCore!.ExecuteScriptAsync("document.getElementById('next').click()");
+            await WaitForPageAsync(form, two, "Feather smoke two");
+            await form.ActiveCore!.ExecuteScriptAsync("history.back()");
+            await WaitForPageAsync(form, one, "Feather smoke one");
+            await WaitForHistoryAsync(form, one, 0, 2);
+            await form.ActiveCore!.ExecuteScriptAsync("history.forward()");
+            await WaitForPageAsync(form, two, "Feather smoke two");
+            await WaitForHistoryAsync(form, two, 1, 2);
+            Check(true, "Native document back and forward preserve history length and model position");
+
+            await form.NavigateInputAsync(one + "?spa");
+            await WaitForPageAsync(form, one + "?spa", "Feather smoke one");
+            for (int i = 1; i <= 85; i++)
+            {
+                await form.ActiveCore!.ExecuteScriptAsync($"history.pushState({{}}, '', '/one?state={i}')");
+                int count = Math.Min(80, 3 + i);
+                await WaitForHistoryAsync(form, one + $"?state={i}", count - 1, count);
+            }
+            await form.ActiveCore!.ExecuteScriptAsync("history.go(-10)");
+            await WaitForHistoryAsync(form, one + "?state=75", 69, 80);
+            Check(true, "SPA history remains correct beyond Chromium's native history window and the 80-entry model limit");
+            await form.ActiveCore.ExecuteScriptAsync("history.replaceState({}, '', '/one?replaced-after-cap')");
+            await WaitForHistoryAsync(form, one + "?replaced-after-cap", 69, 80);
+            await form.ActiveCore.ExecuteScriptAsync("history.pushState({}, '', '/one?branched-after-cap')");
+            await WaitForHistoryAsync(form, one + "?branched-after-cap", 70, 71);
+            Check(true, "SPA replacement and branching after history trimming preserve existing entries");
+
+            await PasswordAutofillTests.RunAsync(form, Check);
+            await form.HomeAsync();
+            await form.ApplyCookiesAsync(JsonSerializer.Serialize(new[] { new
+            {
+                Domain = "127.0.0.1", Name = "feather_native_home_import", Value = "fixture", Path = "/",
+                IsSecure = false, IsHttpOnly = false, ExpiresUtc = (DateTimeOffset?)null, SameSite = "Lax"
+            } }));
+            Check(form.ActiveCore is null && form.LiveViewCount == 0 && form.TabCount == 1,
+                "Cookie import from the native home uses and releases a temporary view without creating a tab");
 
             string errorLog = Path.Combine(dataPath, "errors.log");
             Check(!File.Exists(errorLog) || new FileInfo(errorLog).Length == 0,
@@ -257,6 +368,17 @@ internal static class SmokeTests
         {
             throw new TimeoutException($"{ex.Message}; expected index/count: {index}/{count}; actual URL: {form.ActiveTab.CurrentUrl}; actual index/count: {form.ActiveTab.HistoryIndex}/{form.ActiveTab.History.Count}.", ex);
         }
+    }
+
+    private static async Task WaitForScriptValueAsync(MainForm form, string script, string expected)
+    {
+        var watch = Stopwatch.StartNew();
+        while (watch.Elapsed < TimeSpan.FromSeconds(10))
+        {
+            if (await form.ActiveCore!.ExecuteScriptAsync(script) == expected) return;
+            await Task.Delay(50);
+        }
+        throw new TimeoutException($"Script value did not become {expected}: {script}");
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition, string failureMessage)
@@ -335,7 +457,7 @@ internal static class SmokeTests
                 bool second = path.StartsWith("/two", StringComparison.Ordinal);
                 string name = second ? "two" : "one";
                 string destination = second ? "/one" : "/two";
-                string html = $"<!doctype html><html><head><meta charset=\"utf-8\"><title>Feather smoke {name}</title></head><body><h1>Local test {name}</h1><p id=\"probe\">Waiting for JavaScript</p><a id=\"next\" href=\"{destination}\">Next page</a><script>window.smokeProbe=42;document.getElementById('probe').textContent='JavaScript is running';</script></body></html>";
+                string html = $"<!doctype html><html><head><meta charset=\"utf-8\"><title>Feather smoke {name}</title><style>body{{min-height:3200px}}</style></head><body><h1>Local test {name}</h1><p id=\"probe\">Waiting for JavaScript</p><a id=\"next\" href=\"{destination}\">Next page</a><script>window.smokeProbe=42;document.getElementById('probe').textContent='JavaScript is running';</script></body></html>";
                 byte[] body = Encoding.UTF8.GetBytes(html);
                 byte[] responseHeader = Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {body.Length}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n");
                 await stream.WriteAsync(responseHeader, timeout.Token);

@@ -133,6 +133,61 @@ public static class CoreTests
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { threw = true; }
                 Assert(threw, "Write failure swallowed");
             });
+
+            Check("Idle policy protects active tabs, media and downloads", () =>
+            {
+                var now = DateTimeOffset.UtcNow;
+                var timeout = TimeSpan.FromMinutes(5);
+                Assert(!TabUnloadPolicy.ShouldUnload(false, false, now.AddMinutes(-4), now, timeout), "Early eviction");
+                Assert(TabUnloadPolicy.ShouldUnload(false, false, now.AddMinutes(-5), now, timeout), "Timeout boundary");
+                Assert(!TabUnloadPolicy.ShouldUnload(true, false, now.AddHours(-1), now, timeout), "Active tab evicted");
+                Assert(!TabUnloadPolicy.ShouldUnload(false, true, now.AddHours(-1), now, timeout), "Protected tab evicted");
+            });
+
+            Check("Preferences and themes persist and recover invalid settings", () =>
+            {
+                var settingsPath = Path.Combine(folder, "preferences");
+                Directory.CreateDirectory(settingsPath);
+                var settings = BrowserPreferences.Load(settingsPath);
+                Assert(settings.UnloadAfterMinutes == 5 && settings.MaximumResidentTabs == 8, "Wrong defaults");
+                settings.UnloadAfterMinutes = 15;
+                settings.Save(settingsPath);
+                Assert(BrowserPreferences.Load(settingsPath).UnloadAfterMinutes == 15, "Settings lost");
+                File.WriteAllText(Path.Combine(settingsPath, "preferences.json"), "{\"UnloadAfterMinutes\":-1,\"MaximumResidentTabs\":900}");
+                settings = BrowserPreferences.Load(settingsPath);
+                Assert(settings.UnloadAfterMinutes == 1 && settings.MaximumResidentTabs == 32, "Settings bounds");
+                ThemeSettings.Load(settingsPath);
+                Assert(ThemeSettings.Current == BrowserTheme.Anime, "Anime must be default");
+                ThemeSettings.Select(BrowserTheme.Light, settingsPath);
+                ThemeSettings.Load(settingsPath);
+                Assert(ThemeSettings.Current == BrowserTheme.Light, "Theme not persisted");
+                File.WriteAllText(Path.Combine(settingsPath, "theme.json"), "\"invalid\"");
+                ThemeSettings.Load(settingsPath);
+                Assert(ThemeSettings.Current == BrowserTheme.Anime, "Invalid theme recovery");
+            });
+
+            Check("Scroll state survives session storage and is bounded", () =>
+            {
+                var path = Path.Combine(folder, "scroll.json");
+                var session = new AppSession();
+                session.Tabs[0].ScrollY = 1700;
+                session.Tabs[0].ScrollX = -100;
+                SessionStore.Save(path, session);
+                var tab = SessionStore.Load(path).Tabs[0];
+                Assert(tab.ScrollY == 1700 && tab.ScrollX == 0, "Scroll storage or bounds");
+            });
+
+            FeatureModule.RunTests(Check, folder);
+            Check("Optional feature assembly unloads after use", () =>
+            {
+                for (int attempt = 0; attempt < 10 && FeatureModule.LastContext!.IsAlive; attempt++)
+                {
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                    GC.Collect();
+                }
+                Assert(FeatureModule.LastContext is { IsAlive: false }, "Feature load context retained");
+            });
         }
         finally
         {

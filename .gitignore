@@ -5,3 +5,7 @@ dist/
 *.user
 smoke-results.json
 preview.png
+core-results.txt
+core-errors.txt
+**/bin/
+**/obj/

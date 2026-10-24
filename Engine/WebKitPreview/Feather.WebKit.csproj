@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Feather.WebKit</AssemblyName>
+    <RootNamespace>Feather.WebKit</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <PlaywrightPlatform>win-x64</PlaywrightPlatform>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Playwright" Version="1.64.1" />
+  </ItemGroup>
+</Project>
