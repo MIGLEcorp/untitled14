@@ -1,4 +1,4 @@
-#define AppVersion "4.0.0"
+#define AppVersion "4.1.0"
 [Setup]
 AppId={{B4E6167D-3A9C-41E6-A0A2-9176BEDDAC12}
 AppName=MBrowser
@@ -36,6 +36,9 @@ Source: "..\bin\tools\MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: 
 Name: "{group}\MBrowser"; Filename: "{app}\MBrowser.exe"; AppUserModelID: "MIGLEcorp.MBrowser"; Check: not IsTestInstall
 Name: "{autodesktop}\MBrowser"; Filename: "{app}\MBrowser.exe"; AppUserModelID: "MIGLEcorp.MBrowser"; Tasks: desktopicon; Check: not IsTestInstall
 [InstallDelete]
+Type: files; Name: "{app}\assets\kawaii-home.jpg"
+Type: files; Name: "{app}\assets\kawaii-menu.jpg"
+Type: files; Name: "{app}\assets\kawaii-chrome.jpg"
 Type: files; Name: "{app}\Feather.exe"
 Type: files; Name: "{app}\Feather.dll"
 Type: files; Name: "{app}\Feather.deps.json"

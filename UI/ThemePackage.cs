@@ -33,7 +33,7 @@ internal static class ThemePackage
     {
         if (new FileInfo(source).Length > 85 * 1024 * 1024) throw new InvalidDataException("Пакет темы слишком большой.");
         using var archive = ZipFile.OpenRead(source);
-        if (archive.Entries.Count > 7 || archive.Entries.Sum(x => x.Length) > 85 * 1024 * 1024) throw new InvalidDataException("Слишком много данных в теме.");
+        if (archive.Entries.Count > 7 || archive.Entries.Any(x => x.Length > 16 * 1024 * 1024) || archive.Entries.Sum(x => x.Length) > 85 * 1024 * 1024) throw new InvalidDataException("Слишком много данных в теме.");
         var settings = archive.GetEntry("theme.json");
         if (settings is null || settings.Length > 32768) throw new InvalidDataException("Нет допустимого theme.json.");
         using var reader = new StreamReader(settings.Open());
@@ -46,6 +46,13 @@ internal static class ThemePackage
             if (!imported.TryGetValue(layer.File, out string? file))
             {
                 var entry = archive.GetEntry("media/" + layer.File);
+                // 4.0 packages embedded the former built-in filenames. Normalize
+                // migrates settings, but the archive's original entry still exists.
+                if (entry is null)
+                {
+                    string legacy = layer.File switch { "sakura-home.png" => "kawaii-home.jpg", "sakura-menu.png" => "kawaii-menu.jpg", "sakura-header.png" => "kawaii-chrome.jpg", _ => layer.File };
+                    entry = archive.GetEntry("media/" + legacy);
+                }
                 if (entry is null || entry.Length > 16 * 1024 * 1024) throw new InvalidDataException("В теме отсутствует изображение или оно слишком большое.");
                 string temporary = Path.GetTempFileName();
                 try { entry.ExtractToFile(temporary, true); file = ThemeMedia.Import(temporary, dataPath); imported[layer.File] = file; }

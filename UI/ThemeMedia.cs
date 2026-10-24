@@ -99,7 +99,13 @@ internal static class ThemeMedia
 
     internal static void Draw(Graphics graphics, Rectangle bounds, ThemeArea area, Control owner)
     {
-        graphics.Clear(area == ThemeArea.Home ? Palette.Background : Palette.Surface);
+        var crop = graphics.Save();
+        try { graphics.SetClip(bounds, CombineMode.Intersect); DrawSurface(graphics, bounds, area, owner); }
+        finally { graphics.Restore(crop); }
+    }
+    private static void DrawSurface(Graphics graphics, Rectangle bounds, ThemeArea area, Control owner)
+    {
+        using (var background = new SolidBrush(area == ThemeArea.Home ? Palette.Background : Palette.Surface)) graphics.FillRectangle(background, bounds);
         var layer = ThemeSettings.Layer(area);
         string path = Resolve(layer.File);
         if (bounds.Width < 1 || bounds.Height < 1 || path.Length == 0) return;
@@ -122,12 +128,17 @@ internal static class ThemeMedia
         if (layer.Fit == "tile")
         {
             using var texture = new TextureBrush(image, WrapMode.Tile);
+            using var transform = new Matrix();
+            transform.Scale(layer.Zoom,layer.Zoom);
+            transform.Translate(bounds.X + layer.PanX * bounds.Width,bounds.Y + layer.PanY * bounds.Height,MatrixOrder.Append);
+            texture.Transform = transform;
             graphics.FillRectangle(texture, bounds);
         }
         else
         {
-            float scale = layer.Fit == "contain" ? Math.Min(bounds.Width / (float)image.Width, bounds.Height / (float)image.Height) : Math.Max(bounds.Width / (float)image.Width, bounds.Height / (float)image.Height);
-            var target = new RectangleF(bounds.X + (bounds.Width - image.Width * scale) / 2, bounds.Y + (bounds.Height - image.Height * scale) / 2, image.Width * scale, image.Height * scale);
+            float scale = (layer.Fit == "contain" ? Math.Min(bounds.Width / (float)image.Width, bounds.Height / (float)image.Height) : Math.Max(bounds.Width / (float)image.Width, bounds.Height / (float)image.Height)) * layer.Zoom;
+            var target = new RectangleF(bounds.X + (bounds.Width - image.Width * scale) / 2 + layer.PanX * bounds.Width,
+                bounds.Y + (bounds.Height - image.Height * scale) / 2 + layer.PanY * bounds.Height, image.Width * scale, image.Height * scale);
             using var attributes = new ImageAttributes();
             attributes.SetWrapMode(WrapMode.TileFlipXY);
             graphics.DrawImage(image, Rectangle.Round(target), 0, 0, image.Width, image.Height, GraphicsUnit.Pixel, attributes);
@@ -136,21 +147,42 @@ internal static class ThemeMedia
         graphics.FillRectangle(tint, bounds);
         graphics.Restore(state);
     }
+
+    internal static void DrawChromeSlice(Graphics graphics, Control owner)
+    {
+        Control? host = owner;
+        while (host is not null && host is not ChromeHost) host = host.Parent;
+        if (host is null) { Draw(graphics, owner.ClientRectangle, ThemeArea.Chrome, owner); return; }
+        Point offset = host.PointToClient(owner.PointToScreen(Point.Empty));
+        var state = graphics.Save();
+        graphics.TranslateTransform(-offset.X, -offset.Y);
+        Draw(graphics, host.ClientRectangle, ThemeArea.Chrome, owner);
+        graphics.Restore(state);
+    }
+}
+
+internal sealed class ChromeHost : ThemePanel
+{
+    internal ChromeHost() { Area = ThemeArea.Chrome; Tag = "fullscreen-visible"; Dock = DockStyle.Top; Height = 143; }
 }
 
 internal class ThemePanel : Panel
 {
     internal ThemeArea Area = ThemeArea.Tabs;
     internal ThemePanel() => SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-    protected override void OnPaintBackground(PaintEventArgs e) => ThemeMedia.Draw(e.Graphics, ClientRectangle, Area, this);
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        if (Area is ThemeArea.Home or ThemeArea.Menu) ThemeMedia.Draw(e.Graphics, ClientRectangle, Area, this);
+        else ThemeMedia.DrawChromeSlice(e.Graphics, this);
+    }
 }
 internal sealed class ThemeToolbar : TableLayoutPanel
 {
     internal ThemeToolbar() => SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-    protected override void OnPaintBackground(PaintEventArgs e) => ThemeMedia.Draw(e.Graphics, ClientRectangle, ThemeArea.Toolbar, this);
+    protected override void OnPaintBackground(PaintEventArgs e) => ThemeMedia.DrawChromeSlice(e.Graphics, this);
 }
 internal sealed class ThemeBookmarks : FlowLayoutPanel
 {
     internal ThemeBookmarks() => SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-    protected override void OnPaintBackground(PaintEventArgs e) => ThemeMedia.Draw(e.Graphics, ClientRectangle, ThemeArea.Bookmarks, this);
+    protected override void OnPaintBackground(PaintEventArgs e) => ThemeMedia.DrawChromeSlice(e.Graphics, this);
 }

@@ -2,13 +2,13 @@ namespace MBrowser;
 
 internal sealed partial class MainForm
 {
+    private readonly ChromeHost _chromeHost = new();
+    private readonly ThemeToolbar _toolbar = new();
     private void BuildChrome()
     {
-        var toolbar = new ThemeToolbar
-        {
-            Dock = DockStyle.Top, Height = 58, Padding = new Padding(10, 10, 10, 10),
-            ColumnCount = 8, RowCount = 1, BackColor = Palette.Surface
-        };
+        var toolbar = _toolbar;
+        toolbar.Dock = DockStyle.Top; toolbar.Height = 58; toolbar.Padding = new Padding(10);
+        toolbar.ColumnCount = 8; toolbar.RowCount = 1; toolbar.BackColor = Palette.Surface;
         for (int i = 0; i < 4; i++) toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 44));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 44));
@@ -54,11 +54,21 @@ internal sealed partial class MainForm
         foreach (Control control in toolbar.Controls) if (control is Button) control.BackColor = Color.Transparent;
         _viewport.Controls.Add(_home);
         Controls.Add(_viewport);
-        Controls.Add(_bookmarkBar);
-        Controls.Add(toolbar);
-        Controls.Add(_tabs);
+        _chromeHost.Controls.Add(_bookmarkBar);
+        _chromeHost.Controls.Add(toolbar);
+        _chromeHost.Controls.Add(_tabs);
+        Controls.Add(_chromeHost);
         toolbar.Tag = "fullscreen-visible";
         _bookmarkBar.Tag = "fullscreen-visible";
         InitializeBookmarksAndSuggestions();
     }
+
+    private void UpdateChromeLayout()
+    {
+        _bookmarkBar.Visible = ActiveTab.CurrentUrl is null or "about:blank";
+        _chromeHost.Height = (IsFullScreen ? 0 : TitleBarHeight) + _toolbar.Height + (_bookmarkBar.Visible ? _bookmarkBar.Height : 0);
+        _chromeHost.Invalidate(true);
+    }
+    internal bool BookmarksVisibleForTest => _bookmarkBar.Visible;
+    internal Control ChromeHostForTest => _chromeHost;
 }

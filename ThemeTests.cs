@@ -13,16 +13,53 @@ internal static class ThemeTests
     {
         string profile = Path.Combine(folder, "theme-profile");
         Directory.CreateDirectory(profile);
-        check("Theme editor colors and five independent layers survive a reload", () =>
+        check("Theme colors, unified header and image transforms survive a reload", () =>
         {
             ThemeSettings.Load(profile);
             var doc = ThemeSettings.Preset(BrowserTheme.Anime) with { Name = "Розовая тема", Colors = new() { ["Accent"] = "#F080B0" } };
-            doc.Layers[ThemeArea.Toolbar] = new("kawaii-chrome.jpg", "tile", 99);
+            doc.Layers[ThemeArea.Chrome] = new("sakura-header.png", "tile", 99, 1.5f, .2f, -.1f);
             ThemeSettings.Save(doc, profile); ThemeSettings.Load(profile);
             Assert(ThemeSettings.Document.Name == doc.Name && ThemeSettings.Colors.Accent.ToArgb() == Color.FromArgb(240,128,176).ToArgb(), "Theme colors/name lost");
-            Assert(ThemeSettings.Layer(ThemeArea.Toolbar).Fit == "tile" && ThemeSettings.Layer(ThemeArea.Toolbar).Tint == 99 && ThemeSettings.Document.Layers.Count == 5, "Independent layers lost");
+            Assert(ThemeSettings.Layer(ThemeArea.Chrome).Fit == "tile" && ThemeSettings.Layer(ThemeArea.Chrome).Tint == 99 && ThemeSettings.Document.Layers.Count == 3 && ThemeSettings.Layer(ThemeArea.Chrome).Zoom == 1.5f, "Unified header or transform lost");
+            var migrated = ThemeSettings.Normalize(new() { Layers = new() { [ThemeArea.Tabs] = new("sakura-header.png"), [ThemeArea.Toolbar] = new("legacy.png", "cover", 71) } });
+            Assert(migrated.Layers[ThemeArea.Chrome].File == "legacy.png" && !migrated.Layers.ContainsKey(ThemeArea.Tabs), "Old split header was not migrated");
             File.WriteAllText(Path.Combine(profile, "theme.json"), "\"Dark\""); ThemeSettings.Load(profile);
             Assert(ThemeSettings.Current == BrowserTheme.Dark, "Legacy theme not migrated");
+        });
+        check("Header strips sample one PNG in shared coordinates without seams or overpainting", () =>
+        {
+            ThemeSettings.Load(profile);
+            string fixture = Path.Combine(profile,"gradient.png");
+            using (var source = new Bitmap(240,143))
+            { for (int y=0;y<143;y++) for (int x=0;x<240;x++) source.SetPixel(x,y,Color.FromArgb(x,y,(x+y)%255)); source.Save(fixture,ImageFormat.Png); }
+            var document = ThemeSettings.Preset(BrowserTheme.Anime);
+            document.Layers[ThemeArea.Chrome] = new(ThemeMedia.Import(fixture,profile),"cover",0,1.5f,.1f,-.05f);
+            ThemeSettings.Preview(document);
+            using var host = new ChromeHost { Size = new Size(240,143) };
+            using var tabs = new ThemePanel { Bounds = new Rectangle(0,0,240,48) };
+            using var toolbar = new ThemeToolbar { Bounds = new Rectangle(0,48,240,58) };
+            using var bookmarks = new ThemeBookmarks { Bounds = new Rectangle(0,106,240,37) };
+            host.Controls.Add(tabs); host.Controls.Add(toolbar); host.Controls.Add(bookmarks);
+            using var entire = new Bitmap(240,143);
+            using (var graphics=Graphics.FromImage(entire)) ThemeMedia.Draw(graphics,host.ClientRectangle,ThemeArea.Chrome,host);
+            foreach (Control strip in new Control[] { tabs,toolbar,bookmarks })
+            {
+                using var slice = new Bitmap(strip.Width,strip.Height);
+                using (var graphics=Graphics.FromImage(slice)) ThemeMedia.DrawChromeSlice(graphics,strip);
+                for(int y=3;y<slice.Height-3;y+=7) for(int x=3;x<slice.Width-3;x+=13)
+                    Assert(slice.GetPixel(x,y)==entire.GetPixel(x,y+strip.Top),"Header image restarted in a child strip");
+            }
+            using var canvas = new Bitmap(100,100);
+            using (var graphics=Graphics.FromImage(canvas)) { graphics.Clear(Color.Lime); ThemeMedia.Draw(graphics,new Rectangle(20,20,50,50),ThemeArea.Chrome,host); }
+            Assert(canvas.GetPixel(3,3).ToArgb()==Color.Lime.ToArgb() && canvas.GetPixel(90,90).ToArgb()==Color.Lime.ToArgb(),"Preview overpainted another area");
+            document.Layers[ThemeArea.Chrome] = document.Layers[ThemeArea.Chrome] with { Fit="tile", Zoom=1, PanX=0, PanY=0 };
+            ThemeSettings.Preview(document);
+            using (var graphics=Graphics.FromImage(entire)) ThemeMedia.Draw(graphics,host.ClientRectangle,ThemeArea.Chrome,host);
+            int before=entire.GetPixel(100,70).ToArgb();
+            document.Layers[ThemeArea.Chrome] = document.Layers[ThemeArea.Chrome] with { Zoom=2, PanX=.1f };
+            ThemeSettings.Preview(document);
+            using (var graphics=Graphics.FromImage(entire)) ThemeMedia.Draw(graphics,host.ClientRectangle,ThemeArea.Chrome,host);
+            Assert(entire.GetPixel(100,70).ToArgb()!=before,"Tile mode ignored image transforms");
         });
         check("Portable theme packages copy real images and never extract arbitrary paths", () =>
         {
@@ -58,6 +95,20 @@ internal static class ThemeTests
             try { ThemePackage.Import(zipPath, profile); } catch (InvalidDataException) { rejected = true; }
             Assert(rejected, "Missing image silently accepted");
         });
+        check("Legacy theme packages keep their embedded images while merging the header", () =>
+        {
+            string package = Path.Combine(folder,"legacy.mbtheme");
+            var old = new ThemeDocument { Layers = new() { [ThemeArea.Home] = new("kawaii-home.jpg"),
+                [ThemeArea.Toolbar] = new("kawaii-chrome.jpg"), [ThemeArea.Menu] = new("kawaii-menu.jpg") } };
+            using (var archive = ZipFile.Open(package,ZipArchiveMode.Create))
+            {
+                using (var writer = new StreamWriter(archive.CreateEntry("theme.json").Open())) writer.Write(JsonSerializer.Serialize(old));
+                foreach (string name in new[] { "kawaii-home.jpg","kawaii-menu.jpg","kawaii-chrome.jpg" })
+                { using var entry = archive.CreateEntry("media/" + name).Open(); entry.Write(Convert.FromBase64String(AnimatedFixture)); }
+            }
+            var imported = ThemePackage.Import(package,profile);
+            Assert(imported.Layers.Count==3 && imported.Layers[ThemeArea.Chrome].File.StartsWith("media-"),"Legacy package image not imported");
+        });
         ThemeSettings.Load(profile);
     }
 
@@ -89,6 +140,16 @@ internal static class ThemeTests
             check(Path.GetFileName(Application.ExecutablePath) == "MBrowser.exe" && form.Icon is not null && form.Text.Contains("MBrowser"), "Executable name, window title and application icon use MBrowser branding");
             form.ShowThemeMenu();
             var editor = form.InternalMenuControlForTest!;
+            var canvas = Descendants(editor).OfType<ThemeCanvas>().Single();
+            var header = canvas.ChromeRectangle;
+            int PointParameter(int x,int y) => (y << 16) | (x & 0xffff);
+            int cx=header.X+header.Width/2,cy=header.Y+header.Height/2;
+            SendMessage(canvas.Handle,0x0201,1,PointParameter(cx,cy));
+            SendMessage(canvas.Handle,0x0200,1,PointParameter(cx+25,cy+6));
+            SendMessage(canvas.Handle,0x0202,0,PointParameter(cx+25,cy+6));
+            check(ThemeSettings.Layer(ThemeArea.Chrome).PanX>0 && canvas.SelectedArea==ThemeArea.Chrome,"Dragging the graphical canvas moves the entire header background");
+            SendMessage(canvas.Handle,0x0100,(nint)Keys.Add,0);
+            check(ThemeSettings.Layer(ThemeArea.Chrome).Zoom>1,"The graphical canvas supports keyboard image zoom");
             var pink = Descendants(editor).OfType<Button>().Single(x => x.Text == "Pink kawaii");
             var dark = Descendants(editor).OfType<Button>().Single(x => x.Text == "Тёмная");
             dark.PerformClick();

@@ -59,6 +59,7 @@ internal sealed partial class MainForm : BrowserWindow
         KeyPreview = true;
         BuildChrome();
         InitializeWindowFrame(_tabs);
+        FullScreenChanged += UpdateChromeLayout;
         Palette.Apply(this);
 
         _tabs.IsTabLoaded = id => _runtimes.TryGetValue(id, out var runtime) && runtime.View.CoreWebView2?.IsSuspended != true;
@@ -99,11 +100,12 @@ internal sealed partial class MainForm : BrowserWindow
         _tabs.Tabs = _session.Tabs;
         _tabs.SelectedIndex = _session.SelectedIndex;
         _tabs.RevealSelected();
+        UpdateChromeLayout();
         if (!_address.Focused) _address.Text = ActiveTab.CurrentUrl is null or "about:blank" ? "" : ActiveTab.CurrentUrl;
         _back.Enabled = ActiveTab.CanGoBack;
         _forward.Enabled = ActiveTab.CanGoForward;
         _reload.Text = IsPageLoading ? "×" : "↻";
-        Text = ActiveTab.Title + " — MBrowser";
+        Text = "MBrowser — " + ActiveTab.Title;
         _saveTimer.Stop();
         _saveTimer.Start();
     }

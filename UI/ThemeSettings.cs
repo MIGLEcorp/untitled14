@@ -5,8 +5,10 @@ namespace MBrowser;
 
 internal enum BrowserTheme { Anime, Dark, Light }
 internal sealed record ThemeColors(Color Background, Color Surface, Color Raised, Color Text, Color Muted, Color Accent, Color Sky);
-internal enum ThemeArea { Home, Tabs, Toolbar, Bookmarks, Menu }
-internal sealed record ThemeLayer(string File = "", string Fit = "cover", int Tint = 150);
+// Values 1–3 are retained for importing themes from MBrowser 4.0.
+internal enum ThemeArea { Home, Tabs, Toolbar, Bookmarks, Menu, Chrome }
+internal sealed record ThemeLayer(string File = "", string Fit = "cover", int Tint = 150,
+    float Zoom = 1, float PanX = 0, float PanY = 0);
 internal sealed record ThemeDocument
 {
     public string Name { get; init; } = "Pink kawaii";
@@ -15,7 +17,7 @@ internal sealed record ThemeDocument
     public Dictionary<ThemeArea, ThemeLayer> Layers { get; init; } = [];
 }
 
-/// <summary>One small settings file; themes use native colors and vector artwork.</summary>
+/// <summary>Small, manually editable theme file; old independent chrome layers migrate to one image.</summary>
 internal static class ThemeSettings
 {
     internal static readonly JsonSerializerOptions JsonOptions = new()
@@ -34,9 +36,9 @@ internal static class ThemeSettings
     internal static ThemeDocument Preset(BrowserTheme theme) => new()
     {
         Base = theme, Name = theme == BrowserTheme.Anime ? "Pink kawaii" : theme.ToString(),
-        Layers = Enum.GetValues<ThemeArea>().ToDictionary(area => area, area => new ThemeLayer(
-            theme == BrowserTheme.Anime ? area == ThemeArea.Home ? "kawaii-home.jpg" : area == ThemeArea.Menu ? "kawaii-menu.jpg" : "kawaii-chrome.jpg" : "",
-            "cover", area == ThemeArea.Home ? 0 : area == ThemeArea.Menu ? 135 : 115))
+        Layers = new[] { ThemeArea.Home, ThemeArea.Chrome, ThemeArea.Menu }.ToDictionary(area => area, area => new ThemeLayer(
+            theme == BrowserTheme.Anime ? area == ThemeArea.Home ? "sakura-home.png" : area == ThemeArea.Menu ? "sakura-menu.png" : "sakura-header.png" : "",
+            "cover", area == ThemeArea.Home ? 0 : area == ThemeArea.Menu ? 155 : 115))
     };
     internal static ThemeColors Colors
     {
@@ -50,18 +52,41 @@ internal static class ThemeSettings
                 Read("Text", c.Text), Read("Muted", c.Muted), Read("Accent", c.Accent), c.Sky);
         }
     }
-    internal static ThemeLayer Layer(ThemeArea area) => Document.Layers.GetValueOrDefault(area) ?? new();
-    internal static void Preview(ThemeDocument document) { _previousColors = Colors; Document = Normalize(document); ThemeMedia.ReleaseAll(); }
-    internal static ThemeDocument Normalize(ThemeDocument doc) => doc with
+    internal static ThemeLayer Layer(ThemeArea area) => Document.Layers.GetValueOrDefault(
+        area is ThemeArea.Tabs or ThemeArea.Toolbar or ThemeArea.Bookmarks ? ThemeArea.Chrome : area) ?? new();
+    internal static void Preview(ThemeDocument document)
     {
+        _previousColors = Colors;
+        var next = Normalize(document);
+        if (new[] { ThemeArea.Home, ThemeArea.Chrome, ThemeArea.Menu }.Any(area =>
+            Layer(area).File != (next.Layers.GetValueOrDefault(area)?.File ?? ""))) ThemeMedia.ReleaseAll();
+        Document = next;
+    }
+    internal static ThemeDocument Normalize(ThemeDocument doc)
+    {
+        var layers = doc.Layers ?? [];
+        var chrome = layers.GetValueOrDefault(ThemeArea.Chrome) ?? layers.GetValueOrDefault(ThemeArea.Toolbar) ??
+            layers.GetValueOrDefault(ThemeArea.Tabs) ?? new();
+        ThemeLayer Clean(ThemeLayer? value)
+        {
+            var layer = value ?? new();
+            string file = Path.GetFileName(layer.File ?? "");
+            file = file switch { "kawaii-home.jpg" => "sakura-home.png", "kawaii-menu.jpg" => "sakura-menu.png", "kawaii-chrome.jpg" => "sakura-header.png", _ => file };
+            return layer with { File = file, Tint = Math.Clamp(layer.Tint, 0, 255),
+                Fit = layer.Fit is "contain" or "tile" ? layer.Fit : "cover",
+                Zoom = float.IsFinite(layer.Zoom) ? Math.Clamp(layer.Zoom, 1, 4) : 1,
+                PanX = float.IsFinite(layer.PanX) ? Math.Clamp(layer.PanX, -1, 1) : 0,
+                PanY = float.IsFinite(layer.PanY) ? Math.Clamp(layer.PanY, -1, 1) : 0 };
+        }
+        return doc with {
         Name = (doc.Name ?? "Моя тема")[..Math.Min(80, (doc.Name ?? "Моя тема").Length)],
         Base = Enum.IsDefined(doc.Base) ? doc.Base : BrowserTheme.Anime,
         Colors = doc.Colors?.Where(x => x.Value is { Length: 7 } && x.Value[0] == '#' &&
             int.TryParse(x.Value.AsSpan(1), System.Globalization.NumberStyles.HexNumber, null, out _)).Take(6).ToDictionary() ?? [],
-        Layers = (doc.Layers ?? []).Where(x => Enum.IsDefined(x.Key) && x.Value is not null).ToDictionary(x => x.Key,
-            x => x.Value with { File = Path.GetFileName(x.Value.File ?? ""), Tint = Math.Clamp(x.Value.Tint, 0, 255),
-                Fit = x.Value.Fit is "contain" or "tile" ? x.Value.Fit : "cover" })
-    };
+        Layers = new() { [ThemeArea.Home] = Clean(layers.GetValueOrDefault(ThemeArea.Home)),
+            [ThemeArea.Chrome] = Clean(chrome), [ThemeArea.Menu] = Clean(layers.GetValueOrDefault(ThemeArea.Menu)) }
+        };
+    }
 
     internal static void Load(string dataPath)
     {

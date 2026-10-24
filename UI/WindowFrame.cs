@@ -13,6 +13,9 @@ internal class BrowserWindow : Form
     private readonly ToolTip _windowTips = new();
     private readonly List<Control> _hiddenInFullscreen = [];
     private CaptionButton? _maximize;
+    private Control? _titleFrame;
+    protected int TitleBarHeight => _titleFrame?.Height ?? 48;
+    protected event Action? FullScreenChanged;
     private Rectangle _restoreBounds;
     private FormWindowState _restoreState;
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -50,6 +53,8 @@ internal class BrowserWindow : Form
     protected void InitializeWindowFrame(TabStrip tabs)
     {
         var frame = new ThemePanel { Dock = DockStyle.Top, Height = 48, BackColor = Palette.Background, AccessibleName = "Заголовок окна" };
+        _titleFrame = frame;
+        var chromeParent = tabs.Parent ?? this;
         var captions = new Panel { Dock = DockStyle.Right, Width = 138, BackColor = Color.Transparent };
         var minimize = new CaptionButton(CaptionGlyph.Minimize) { AccessibleName = "Свернуть", Dock = DockStyle.Left };
         _maximize = new CaptionButton(CaptionGlyph.Maximize) { AccessibleName = "Развернуть или восстановить", Dock = DockStyle.Left };
@@ -66,10 +71,10 @@ internal class BrowserWindow : Form
         tabs.TitleAreaMouseDown += DragTitleArea;
         frame.MouseDown += (_, e) => DragTitleArea(e);
         tabs.Dock = DockStyle.Fill;
-        Controls.Remove(tabs);
+        chromeParent.Controls.Remove(tabs);
         frame.Controls.Add(tabs);
         frame.Controls.Add(captions);
-        Controls.Add(frame);
+        chromeParent.Controls.Add(frame);
         // Docking walks siblings in reverse order: the new top strip must remain last.
     }
 
@@ -83,7 +88,7 @@ internal class BrowserWindow : Form
             Padding = Padding.Empty;
             WindowState = FormWindowState.Normal;
             _hiddenInFullscreen.Clear();
-            foreach (Control control in Controls)
+            foreach (Control control in Controls.Cast<Control>().Concat(_titleFrame?.Parent != this && _titleFrame is not null ? new[] { _titleFrame } : []))
                 if (control.Visible && control.Tag as string != "fullscreen-visible" && control.Dock is DockStyle.Top or DockStyle.Bottom)
                 {
                     _hiddenInFullscreen.Add(control);
@@ -101,6 +106,7 @@ internal class BrowserWindow : Form
             _hiddenInFullscreen.Clear();
         }
         _maximize?.Invalidate();
+        FullScreenChanged?.Invoke();
     }
 
     private void ToggleMaximize()

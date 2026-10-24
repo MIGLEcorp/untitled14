@@ -23,6 +23,9 @@ internal static class SmokeTests
         {
             await form.ReadyTask.WaitAsync(TimeSpan.FromSeconds(40));
             Check(form.LiveViewCount==0,"Native home starts without a browser engine");
+            Check(form.BookmarksVisibleForTest,"Bookmarks are visible on the native home page");
+            int homeHeaderHeight = form.ChromeHostForTest.Height;
+            int bookmarkRowHeight = form.ChromeHostForTest.Controls.OfType<ThemeBookmarks>().Single().Height;
             await ThemeTests.RunUiAsync(form, dataPath, Check);
             form.Refresh(); await Task.Delay(100);
             using(var bitmap=ThemeTests.Capture(form)) bitmap.Save("preview.png",ImageFormat.Png);
@@ -31,6 +34,7 @@ internal static class SmokeTests
             string one=server.Origin+"one",two=server.Origin+"two";
             await form.NavigateInputAsync(one);
             await WaitForPageAsync(form,one,"MBrowser smoke one");
+            Check(!form.BookmarksVisibleForTest && form.ChromeHostForTest.Height==homeHeaderHeight-bookmarkRowHeight,"Opening a website hides bookmarks and removes their row");
             await WaitUntilAsync(()=>Directory.Exists(Path.Combine(dataPath,"Favicons")) && Directory.EnumerateFiles(Path.Combine(dataPath,"Favicons")).Any(),"Site favicon did not reach the local cache");
             Check(true,"The engine favicon is decoded and cached locally");
             await File.WriteAllTextAsync(Path.Combine(dataPath,"bookmarks.json"),JsonSerializer.Serialize(new[]{new{Title="Local bookmark fixture",Url=one}}));
@@ -44,11 +48,13 @@ internal static class SmokeTests
             Check(await retained.ExecuteScriptAsync("window.smokeProbe")=="42","Real JavaScript executes in the installed engine");
             await retained.ExecuteScriptAsync("window.retainedState={value:73};let draft=document.createElement('input');draft.id='draft';document.body.append(draft);draft.value='unsaved draft'");
             await form.OpenTabAsync();
+            Check(form.BookmarksVisibleForTest,"Opening a new home tab restores the bookmarks row");
             await Task.Delay(300);
             await form.FreezeBackgroundForTestAsync();
             await WaitUntilAsync(()=>retained.IsSuspended,"Inactive page did not suspend");
             Check(form.LiveViewCount==1,"Freezing preserves the WebView rather than disposing it");
             await form.SelectTabAsync(0);
+            Check(!form.BookmarksVisibleForTest,"Switching back to a website hides bookmarks again");
             Check(form.ActiveCore==retained && !retained.IsSuspended,"Selecting a frozen tab resumes the same engine instance");
             Check(await retained.ExecuteScriptAsync("window.retainedState.value")=="73" && await retained.ExecuteScriptAsync("document.getElementById('draft').value")=="\"unsaved draft\"","DOM, JavaScript objects and unsaved input survive freezing");
             await form.CloseTabAsync(1);

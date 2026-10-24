@@ -79,7 +79,8 @@ internal sealed partial class MainForm
     internal void ShowThemeMenu()
     {
         CloseOverlay();
-        var editor = new ThemeEditor(DataPath, ApplyCurrentTheme, CloseOverlay);
+        var editor = new ThemeEditor(DataPath, ApplyCurrentTheme, CloseOverlay,
+            new Size(_chromeHost.Width,TitleBarHeight + _toolbar.Height + _bookmarkBar.Height));
         ShowOverlay(editor, new Point(_viewport.Width - editor.Width - 12, 10));
         _menu = editor;
     }

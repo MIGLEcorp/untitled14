@@ -1,4 +1,4 @@
-param([string]$Installer = (Join-Path $PSScriptRoot '..\artifacts\MBrowser-4.0.0-Setup-x64.exe'))
+param([string]$Installer = (Join-Path $PSScriptRoot '..\artifacts\MBrowser-4.1.0-Setup-x64.exe'))
 $ErrorActionPreference = 'Stop'
 $installerPath = (Resolve-Path -LiteralPath $Installer).Path
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('MBrowser-install-' + [Guid]::NewGuid().ToString('N'))
@@ -12,7 +12,7 @@ Set-Content -LiteralPath (Join-Path $testApp 'preserved.txt') -Value 'preserve t
 # TESTMODE disables uninstall registration, shortcuts, launch and WebView2 installation.
 $process = Start-Process -FilePath $installerPath -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TESTMODE=1',('/DIR="' + $testApp + '"'),('/LOG="' + (Join-Path $testRoot 'install.log') + '"')) -WindowStyle Hidden -Wait -PassThru
 if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode). See $testRoot" }
-foreach ($file in @('MBrowser.exe','MBrowser.dll','coreclr.dll','Modules\MBrowser.Features.dll','assets\kawaii-home.jpg','assets\kawaii-menu.jpg','assets\kawaii-chrome.jpg','assets\mbrowser.ico','docs\menu.png','docs\theme-editor.png')) {
+foreach ($file in @('MBrowser.exe','MBrowser.dll','coreclr.dll','Modules\MBrowser.Features.dll','assets\sakura-home.png','assets\sakura-menu.png','assets\sakura-header.png','assets\mbrowser.ico','assets\REN-PY-ART-LICENSE.txt','docs\menu.png','docs\theme-editor.png')) {
     if (!(Test-Path -LiteralPath (Join-Path $testApp $file))) { throw "Missing installed file: $file" }
 }
 if (Test-Path -LiteralPath (Join-Path $testApp 'unins000.exe')) { throw 'Test installation unexpectedly registered an uninstaller.' }

@@ -23,8 +23,9 @@ internal sealed partial class MainForm
         {
             if (_overlay is ThemeEditor editor)
             {
-                editor.Size = new Size(Math.Min(570, Math.Max(240, _viewport.Width - 24)), Math.Min(700, Math.Max(90, _viewport.Height - 24)));
+                editor.Size = new Size(Math.Min(1000, Math.Max(240, _viewport.Width - 24)), Math.Min(690, Math.Max(90, _viewport.Height - 24)));
                 editor.Location = new Point(Math.Max(10, _viewport.Width - editor.Width - 12), 10);
+                editor.UpdateChromeReference(new Size(_chromeHost.Width,TitleBarHeight + _toolbar.Height + _bookmarkBar.Height));
             }
             else CloseOverlay();
         };
@@ -48,6 +49,7 @@ internal sealed partial class MainForm
         {
             var button = Palette.Button(item.Title, item.Title, Math.Clamp(TextRenderer.MeasureText(item.Title, Font).Width + 40, 65, 170));
             button.TextAlign = ContentAlignment.MiddleLeft;
+            button.BackColor = Color.Transparent;
             button.Height = 30;
             button.Font = new Font("Segoe UI", 9);
             button.Margin = new Padding(0, 0, 3, 0);
@@ -58,10 +60,12 @@ internal sealed partial class MainForm
             button.Image = Favicons.GetCached(item.Url);
         }
         var add = Palette.Button("＋", "Добавить или изменить закладки", 34);
+        add.BackColor = Color.Transparent;
         add.Height = 30;
         add.Click += (_, _) => ShowBookmarks();
         _bookmarkBar.Controls.Add(add);
         var more = Palette.Button("»", "Остальные закладки", 34);
+        more.BackColor = Color.Transparent;
         more.Height = 30;
         more.Tag = "overflow";
         more.Click += (_, _) => ShowMenuPage("Закладки", entry =>

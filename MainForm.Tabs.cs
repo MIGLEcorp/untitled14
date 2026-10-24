@@ -113,6 +113,8 @@ internal sealed partial class MainForm
         }
         bool home = ActiveTab.CurrentUrl is null or "about:blank";
         _home.Visible = home;
+        if (!home) ThemeMedia.Release(ThemeArea.Home);
+        UpdateChromeLayout();
         if (home)
         {
             ActiveTab.Title = "Новая вкладка";

@@ -110,7 +110,7 @@ internal sealed class TabStrip : Control
     }
 
     private int Capacity => Math.Max(1, (Width - 116) / 160);
-    protected override void OnPaintBackground(PaintEventArgs e) => ThemeMedia.Draw(e.Graphics, ClientRectangle, ThemeArea.Tabs, this);
+    protected override void OnPaintBackground(PaintEventArgs e) => ThemeMedia.DrawChromeSlice(e.Graphics, this);
     private bool HasOverflow => Tabs.Count > Capacity;
 
     public void RevealSelected()

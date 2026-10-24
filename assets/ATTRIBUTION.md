@@ -2,20 +2,27 @@
 
 ## Pink kawaii theme and MBrowser icon
 
-`kawaii-original.png`: **Moe anime girl in sailor fuku** by **Akane-K**, March 22, 2018.
-Human-drawn illustration, published before modern image generators. CC0 1.0:
-https://creativecommons.org/publicdomain/zero/1.0/
+The previous Akane-K images were replaced in MBrowser 4.1.
 
-Source and reviewed license:
-https://commons.wikimedia.org/wiki/File:Moe_anime_girl_in_sailor_fuku.png
-Original: https://upload.wikimedia.org/wikipedia/commons/a/a5/Moe_anime_girl_in_sailor_fuku.png
-Originally published at https://pixabay.com/illustrations/moe-cute-beautiful-girl-3251269/
-Commons license review: April 12, 2020.
+`eileen-original.png`: **Eileen**, sprites by **Piroshki**, from the Ren'Py tutorial.
+`lucy-original.png`: **Lucy**, sprites by **Mugenjohncel**, from the same tutorial.
+These are original human-drawn sprites, not generated images.
 
-`kawaii-home.jpg`, `kawaii-menu.jpg`, `kawaii-chrome.jpg` and `mbrowser.ico` are
-cropped/composited versions of this drawing over a pink gradient. Rebuild with
-`python tools/prepare-artwork.py` (Pillow). No AI generation or AI image processing.
-The original author does not endorse MBrowser.
+Sources:
+- https://github.com/renpy/renpy/blob/master/tutorial/game/images/eileen%20happy.png
+- https://github.com/renpy/renpy/blob/master/tutorial/game/images/lucy%20happy.png
+- Artist credits: https://github.com/renpy/renpy/blob/master/tutorial/game/script.rpy
+- Art license statement: https://www.renpy.org/doc/html/license.html
+
+Ren'Py releases its demo artwork under the same MIT terms. The accompanying
+copyright/permission notice is included in `REN-PY-ART-LICENSE.txt`.
+Copyright 2004–2026 Tom Rothamel and the credited contributing artists.
+
+`sakura-home.png`, `sakura-menu.png`, `sakura-header.png` and `mbrowser.ico` are
+ordinary scaled/cropped composites over a pink gradient. The header is one PNG,
+shared by every browser strip. Rebuild with `python tools/prepare-artwork.py`
+(Pillow). No AI generation or AI image processing. Ren'Py and the artists do not
+endorse MBrowser; these characters are not claimed as original MBrowser mascots.
 
 ## Additional wallpapers
 

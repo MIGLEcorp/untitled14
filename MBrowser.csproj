@@ -13,14 +13,14 @@
     <Company>MIGLEcorp</Company>
     <ApplicationIcon>assets\mbrowser.ico</ApplicationIcon>
     <RootNamespace>MBrowser</RootNamespace>
-    <Version>4.0.0</Version>
+    <Version>4.1.0</Version>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <ServerGarbageCollection>false</ServerGarbageCollection>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />
-    <Content Include="assets\*.jpg;assets\mbrowser.ico;assets\ATTRIBUTION.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="assets\*.jpg;assets\sakura-*.png;assets\mbrowser.ico;assets\ATTRIBUTION.md;assets\REN-PY-ART-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Compile Remove="Features\**\*.cs;Engine\WebKitPreview\**\*.cs" />
     <ProjectReference Include="Features\MBrowser.Features.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;PublishDir" />
     <Content Include="Features\bin\$(Configuration)\net10.0-windows\MBrowser.Features.dll" Link="Modules\MBrowser.Features.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
