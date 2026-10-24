@@ -12,8 +12,8 @@ internal sealed partial class MainForm
     private static readonly JsonSerializerOptions CredentialJson = new() { PropertyNameCaseInsensitive = true };
 
     internal bool IsCredentialPopupVisible => _credentialPopup?.Visible == true;
-    internal int CredentialPopupCount => _credentialPopup?.Items.OfType<ToolStripMenuItem>().Count() ?? 0;
-    internal Rectangle CredentialPopupBoundsForTest => _credentialPopup?.Bounds ?? Rectangle.Empty;
+    internal int CredentialPopupCount => _credentialPopup?.Items.Count ?? 0;
+    internal Rectangle CredentialPopupBoundsForTest => _credentialPopup is { } popup ? popup.RectangleToScreen(popup.ClientRectangle) : Rectangle.Empty;
     internal Rectangle ActiveWebViewBoundsForTest => ActiveRuntime is { } runtime ? runtime.View.RectangleToScreen(runtime.View.ClientRectangle) : Rectangle.Empty;
     internal int SelectedTabIndexForTest => _session.SelectedIndex;
 
@@ -79,6 +79,9 @@ internal sealed partial class MainForm
             string json = FeatureModule.Invoke(DataPath, "GetAutofillSuggestions", url) as string ?? "[]";
             var suggestions = JsonSerializer.Deserialize<List<CredentialSuggestion>>(json, CredentialJson) ?? [];
             if (suggestions.Count == 0) { DismissPasswordPopup(); return; }
+            // A ready event can supersede a simultaneous focus event. Preserve the actual
+            // focused-field intent in the latest request instead of dropping its chooser.
+            showPopup |= probe.Focused;
 
             // A single saved login can fill without any keyboard shortcut. Do not overwrite input
             // already typed by the user; multiple accounts always wait for a chooser selection.
@@ -152,7 +155,7 @@ internal sealed partial class MainForm
         return true;
     }
 
-    private sealed record CredentialAnchor(string Origin, double X, double Y, double Width, double Height, double ViewportWidth, double ViewportHeight);
+    private sealed record CredentialAnchor(string Origin, double X, double Y, double Width, double Height, double ViewportWidth, double ViewportHeight, bool Focused = false);
 
     private void DismissPasswordPopup()
     {
@@ -183,7 +186,7 @@ internal sealed partial class MainForm
     internal void SelectCredentialSuggestionForTest(int index)
     {
         if (!_smoke) throw new InvalidOperationException("Credential fixture selection requires a smoke-test profile.");
-        var item = _credentialPopup?.Items.OfType<ToolStripMenuItem>().ElementAtOrDefault(index);
+        var item = _credentialPopup?.Items.ElementAtOrDefault(index);
         if (item is null) throw new InvalidOperationException("Credential suggestion does not exist.");
         item.PerformClick();
     }

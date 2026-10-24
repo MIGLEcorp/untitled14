@@ -18,6 +18,7 @@ internal sealed partial class MainForm
         internal bool TraversingHistory { get; set; }
         internal ulong NavigationId { get; set; }
         internal int DownloadCount { get; set; }
+        internal HashSet<string> PendingRequests { get; } = [];
         internal int NativeIndex { get; set; } = -1;
         internal Dictionary<int, int> NativeEntries { get; } = [];
         internal long HistoryRevision { get; set; }
@@ -38,11 +39,12 @@ internal sealed partial class MainForm
         {
             // One environment/profile shared across tabs. Chromium is started by the first website only.
             _environment ??= await CoreWebView2Environment.CreateAsync(null, Path.Combine(DataPath, "WebView2"),
-                new CoreWebView2EnvironmentOptions { Language = "ru-RU" });
+                EnvironmentOptions());
             if (!IsAlive(runtime)) return runtime;
             await view.EnsureCoreWebView2Async(_environment);
             if (!IsAlive(runtime)) return runtime;
             ConfigureView(runtime);
+            await ConfigureActivityTrackingAsync(runtime);
             await ConfigurePasswordAutofillAsync(runtime);
             if (!IsAlive(runtime)) return runtime;
             view.CoreWebView2.Navigate(tab.CurrentUrl!);
@@ -61,11 +63,19 @@ internal sealed partial class MainForm
         core.Settings.IsPasswordAutosaveEnabled = true;
         core.Settings.IsGeneralAutofillEnabled = true;
         SetPageColorScheme(core);
+        ConfigurePermissions(runtime);
+        view.GotFocus += (_, _) => CloseOverlay();
+        core.FaviconChanged += (_, _) => RunUi(async () =>
+        {
+            if (!IsAlive(runtime) || !AddressParser.TryWebUrl(core.Source, out _)) return;
+            try { using var stream = await core.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png); Favicons.Save(core.Source, stream); _tabs.Invalidate(); }
+            catch (Exception ex) when (ex is COMException or ArgumentException or IOException or OutOfMemoryException) { }
+        });
         view.KeyDown += (_, e) => { if (HandleShortcut(e.KeyData)) { e.Handled = true; e.SuppressKeyPress = true; } };
         core.NavigationStarting += (_, e) =>
         {
             if (!IsAlive(runtime)) return;
-            if (tab == ActiveTab) DismissPasswordPopup();
+            if (tab == ActiveTab) { DismissPasswordPopup(); CloseOverlay(); }
             if (!IsWebAddress(e.Uri))
             {
                 e.Cancel = true;
@@ -83,6 +93,7 @@ internal sealed partial class MainForm
             runtime.ProgrammaticNavigation = false;
             runtime.NavigationId = e.NavigationId;
             runtime.Loading = true;
+            runtime.PendingRequests.Clear();
             OnRuntimeChanged(runtime);
         };
         core.SourceChanged += (_, e) =>
@@ -118,7 +129,7 @@ internal sealed partial class MainForm
                 }
             }
             catch (Exception ex) when (ex is COMException or InvalidOperationException) { }
-            if (IsAlive(runtime)) { OnRuntimeChanged(runtime); UpdateMemory(); QueueBudgetEviction(); }
+            if (IsAlive(runtime)) { OnRuntimeChanged(runtime); UpdateMemory(); }
         };
         core.NewWindowRequested += (_, e) =>
         {

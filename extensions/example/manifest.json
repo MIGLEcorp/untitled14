@@ -1,0 +1,9 @@
+﻿{
+  "manifest_version": 3,
+  "name": "Feather: example extension",
+  "version": "1.0.0",
+  "description": "Minimal content-script API example for example.com only.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://example.com/*"],
+  "content_scripts": [{"matches": ["https://example.com/*"], "js": ["content.js"], "run_at": "document_idle"}]
+}

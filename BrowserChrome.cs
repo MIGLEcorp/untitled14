@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Drawing.Drawing2D;
 
 namespace Feather;
@@ -15,7 +15,7 @@ internal static class Palette
 
     public static Button Button(string text, string accessibleName, int width = 40)
     {
-        var button = new Button
+        var button = new RoundedButton
         {
             Text = text, AccessibleName = accessibleName, Width = width, Height = 34,
             FlatStyle = FlatStyle.Flat, BackColor = Surface, ForeColor = Text,
@@ -85,6 +85,8 @@ internal sealed class TabStrip : Control
     internal int SelectedIndex { get; set; }
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal Func<Guid, bool>? IsTabLoaded { get; set; }
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Func<BrowserTab, Image?>? GetFavicon { get; set; }
     public event Action<int>? TabSelected;
     public event Action<int>? TabClosed;
     public event Action? NewTab;
@@ -138,22 +140,13 @@ internal sealed class TabStrip : Control
             using var shape = RoundedRectangle(bounds, 9);
             using var brush = new SolidBrush(active ? Palette.Raised : Palette.Surface);
             g.FillPath(brush, shape);
-            bool anime = ThemeSettings.Current == BrowserTheme.Anime;
-            if (anime)
-            {
-                AnimeArtwork.DrawPortrait(g, new Rectangle(bounds.Left + 7, bounds.Top + 5, 25, 25), index);
-                if (IsSleeping(index))
-                    TextRenderer.DrawText(g, "z", Font, new Rectangle(bounds.Left + 24, bounds.Top + 17, 12, 16), Palette.Text);
-            }
-            else if (IsSleeping(index))
-            {
-                using var outline = new Pen(Palette.Muted, 1.3f);
-                g.DrawEllipse(outline, bounds.Left + 12, bounds.Top + 14, 6, 6);
-            }
+            bool anime = false;
+            if (GetFavicon?.Invoke(Tabs[index]) is { } icon)
+                g.DrawImage(icon, new Rectangle(bounds.Left + 9, bounds.Top + 9, 18, 18));
             else
             {
-                using var dot = new SolidBrush(active ? Palette.Accent : Palette.Muted);
-                g.FillEllipse(dot, bounds.Left + 12, bounds.Top + 14, 6, 6);
+                using var dot = new SolidBrush(IsSleeping(index) ? Palette.Muted : Palette.Accent);
+                g.FillEllipse(dot, bounds.Left + 13, bounds.Top + 14, 6, 6);
             }
             TextRenderer.DrawText(g, Tabs[index].Title, Font,
                 new Rectangle(bounds.Left + (anime ? 40 : 27), bounds.Top, bounds.Width - (anime ? 70 : 57), bounds.Height),
@@ -216,8 +209,8 @@ internal sealed class TabStrip : Control
         if (_next.Contains(e.Location)) hint = "Следующие вкладки";
         if (index >= 0 && index < Tabs.Count)
         {
-            string state = IsSleeping(index) ? "Выгружена из памяти; при открытии страница загрузится заново" :
-                index == SelectedIndex ? "Активная вкладка" : "В памяти; выгрузится после 5 минут без использования";
+            string state = IsSleeping(index) ? "Спящая вкладка" :
+                index == SelectedIndex ? "Активная вкладка" : "В памяти; может быть заморожена, когда браузер не используется";
             hint = $"{Tabs[index].Title}\n{Tabs[index].CurrentUrl ?? "Стартовая страница"}\n{state}";
         }
         _tip.SetToolTip(this, hint);
@@ -292,126 +285,30 @@ internal sealed class TabStrip : Control
 
 internal sealed class HomeSurface : Panel
 {
-    private readonly Panel _content;
-    private readonly TextBox _search;
-    private readonly Label _themeLabel;
+    private readonly GlassPanel _searchBox = new() { Size = new Size(620, 62), Padding = new Padding(22, 20, 20, 16) };
+    internal TextBox SearchBox { get; } = new() { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None,
+        BackColor = Palette.Surface, ForeColor = Palette.Text, Font = new Font("Segoe UI", 13), PlaceholderText = "Поиск или адрес сайта" };
     public event Action<string>? Navigate;
-
     public HomeSurface()
     {
         Dock = DockStyle.Fill;
-        BackColor = Palette.Background;
         DoubleBuffered = true;
-        _content = new TransparentPanel { Size = new Size(540, 438), BackColor = Color.Transparent };
-        Controls.Add(_content);
-        _themeLabel = AddLabel("F E A T H E R  /  S A K U R A", 0, 0, 680, 25, 10, Palette.Accent, FontStyle.Bold);
-        AddLabel("Твой уголок\nбольшого интернета.", 0, 42, 680, 128, 32, Palette.Text, FontStyle.Bold);
-        AddLabel("Твои вкладки, любимые сайты и немного магии.", 2, 183, 540, 29, 12, Palette.Muted);
-
-        var searchBox = new Panel { Location = new Point(0, 232), Size = new Size(540, 54), BackColor = Palette.Raised, Padding = new Padding(18, 14, 12, 12) };
-        _search = new TextBox
-        {
-            BorderStyle = BorderStyle.None, BackColor = Palette.Raised, ForeColor = Palette.Text,
-            Font = new Font("Segoe UI", 14), PlaceholderText = "Адрес сайта или поисковый запрос",
-            AccessibleName = "Адрес или запрос", Dock = DockStyle.Fill
-        };
-        _search.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; Navigate?.Invoke(_search.Text); } };
-        var go = Palette.Button("→", "Открыть", 40);
-        go.BackColor = Palette.Raised;
-        go.Dock = DockStyle.Right;
-        go.Click += (_, _) => Navigate?.Invoke(_search.Text);
-        searchBox.Controls.Add(_search);
-        searchBox.Controls.Add(go);
-        _content.Controls.Add(searchBox);
-
-        var links = new FlowLayoutPanel { Location = new Point(0, 304), Size = new Size(680, 42), FlowDirection = FlowDirection.LeftToRight, BackColor = Color.Transparent };
-        foreach (var (name, url) in new[] { ("Wikipedia ↗", "https://ru.wikipedia.org"), ("GitHub ↗", "https://github.com"), ("Поиск ↗", "https://www.google.com") })
-        {
-            var link = Palette.Button(name, name, 142);
-            link.Font = new Font("Segoe UI", 10);
-            link.Margin = new Padding(0, 0, 10, 0);
-            link.Click += (_, _) => Navigate?.Invoke(url);
-            links.Controls.Add(link);
-        }
-        _content.Controls.Add(links);
-        AddLabel("ВКЛАДКИ ОТДЫХАЮТ ЧЕРЕЗ 5 МИНУТ", 2, 374, 680, 23, 9, Palette.Accent, FontStyle.Bold);
-        AddLabel("Фоновые вкладки засыпают через 5 минут.\nМузыка, загрузки и изменённые формы остаются в памяти.", 2, 400, 540, 38, 9, Palette.Muted);
-        Resize += (_, _) => CenterContent();
-        VisibleChanged += (_, _) => { if (!Visible) AnimeArtwork.ReleaseBackdrop(); };
+        _searchBox.Controls.Add(SearchBox);
+        Controls.Add(_searchBox);
+        SearchBox.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; Navigate?.Invoke(SearchBox.Text); } };
+        Resize += (_, _) => CenterSearch();
     }
-
-    internal void RefreshTheme()
+    private void CenterSearch()
     {
-        _themeLabel.Text = ThemeSettings.Current switch
-        {
-            BrowserTheme.Anime => "F E A T H E R  /  S A K U R A",
-            BrowserTheme.Light => "F E A T H E R  /  D A Y L I G H T",
-            _ => "F E A T H E R  /  M I D N I G H T"
-        };
-        if (ThemeSettings.Current != BrowserTheme.Anime) AnimeArtwork.ReleaseBackdrop();
-        CenterContent();
-        Invalidate(true);
+        _searchBox.Width = Math.Min(620, Math.Max(280, Width - 64));
+        _searchBox.Location = new Point((Width - _searchBox.Width) / 2, Math.Max(32, Height / 3 - 30));
     }
-
+    internal void RefreshTheme() { CenterSearch(); Invalidate(true); }
     protected override void OnPaintBackground(PaintEventArgs e)
     {
-        if (ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
-        var g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        var colors = ThemeSettings.Colors;
-        using var sky = new LinearGradientBrush(ClientRectangle, colors.Background, colors.Sky, 24f);
-        g.FillRectangle(sky, ClientRectangle);
-        if (ThemeSettings.Current != BrowserTheme.Anime) return;
-        if (AnimeArtwork.DrawBackdrop(g, ClientRectangle)) return;
-        float width = ClientSize.Width, height = ClientSize.Height;
-        float moonX = width * .82f, moonY = height * .19f;
-        using (var halo = new SolidBrush(Color.FromArgb(16, colors.Accent))) g.FillEllipse(halo, moonX - 114, moonY - 114, 228, 228);
-        using (var moon = new SolidBrush(Color.FromArgb(90, colors.Accent))) g.FillEllipse(moon, moonX - 70, moonY - 70, 140, 140);
-        using (var shade = new SolidBrush(colors.Sky)) g.FillEllipse(shade, moonX - 89, moonY - 86, 139, 139);
-        DrawMountains(g, width, height, colors);
-        DrawSakura(g, width, height, colors);
+        e.Graphics.Clear(Palette.Background);
+        AnimeArtwork.DrawBackdrop(e.Graphics, ClientRectangle);
+        using var shade = new SolidBrush(Color.FromArgb(24, Color.Black));
+        e.Graphics.FillRectangle(shade, ClientRectangle);
     }
-
-    private static void DrawMountains(Graphics g, float width, float height, ThemeColors colors)
-    {
-        using var far = new SolidBrush(Color.FromArgb(42, colors.Accent));
-        g.FillPolygon(far, new PointF[] { new(0, height), new(0, height * .88f), new(width * .24f, height * .64f), new(width * .43f, height * .85f), new(width * .72f, height * .45f), new(width, height * .8f), new(width, height) });
-        using var snow = new SolidBrush(Color.FromArgb(24, colors.Text));
-        g.FillPolygon(snow, new PointF[] { new(width * .72f, height * .45f), new(width * .66f, height * .54f), new(width * .70f, height * .525f), new(width * .73f, height * .55f), new(width * .76f, height * .51f) });
-        using var near = new SolidBrush(Color.FromArgb(165, colors.Background));
-        g.FillPolygon(near, new PointF[] { new(0, height), new(0, height * .95f), new(width * .2f, height * .83f), new(width * .4f, height * .96f), new(width * .67f, height * .8f), new(width, height * .93f), new(width, height) });
-    }
-
-    private static void DrawSakura(Graphics g, float width, float height, ThemeColors colors)
-    {
-        using var branch = new Pen(Color.FromArgb(75, colors.Accent), 3.5f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
-        g.DrawBezier(branch, width + 12, height * .05f, width * .94f, height * .12f, width * .9f, height * .2f, width * .76f, height * .1f);
-        g.DrawBezier(branch, width * .91f, height * .13f, width * .91f, height * .24f, width * .84f, height * .29f, width * .82f, height * .3f);
-        using var petals = new SolidBrush(Color.FromArgb(128, colors.Accent));
-        using var centers = new SolidBrush(Color.FromArgb(180, colors.Text));
-        foreach (var point in new (float X, float Y)[] { (.96f, .09f), (.92f, .15f), (.87f, .15f), (.83f, .13f), (.79f, .115f), (.90f, .22f), (.86f, .26f), (.82f, .30f) })
-        {
-            float x = width * point.X, y = height * point.Y;
-            for (int i = 0; i < 5; i++)
-            {
-                double angle = i * Math.PI * 2 / 5;
-                g.FillEllipse(petals, x + (float)Math.Cos(angle) * 5 - 4, y + (float)Math.Sin(angle) * 5 - 4, 8, 8);
-            }
-            g.FillEllipse(centers, x - 2, y - 2, 4, 4);
-        }
-        foreach (var point in new (float X, float Y)[] { (.78f, .39f), (.94f, .50f), (.86f, .63f), (.14f, .16f), (.18f, .86f), (.71f, .77f) })
-            g.FillEllipse(petals, width * point.X, height * point.Y, 5, 9);
-    }
-
-    private Label AddLabel(string text, int x, int y, int width, int height, float fontSize, Color color, FontStyle style = FontStyle.Regular)
-    {
-        var label = new Label { Text = text, Location = new Point(x, y), Size = new Size(width, height), Font = new Font("Segoe UI", fontSize, style), ForeColor = color, BackColor = Color.Transparent };
-        _content.Controls.Add(label);
-        return label;
-    }
-
-    private void CenterContent() => _content.Location = new Point(
-        ThemeSettings.Current == BrowserTheme.Anime ? Math.Max(28, ClientSize.Width / 22) : Math.Max(24, (ClientSize.Width - _content.Width) / 2),
-        Math.Max(16, (ClientSize.Height - _content.Height) / 2 - 10));
-    private sealed class TransparentPanel : Panel { public TransparentPanel() => DoubleBuffered = true; }
 }

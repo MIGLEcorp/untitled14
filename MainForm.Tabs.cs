@@ -100,7 +100,9 @@ internal sealed partial class MainForm
     /// <summary>Switching a tab keeps its live page intact. Only idle eviction disposes its control.</summary>
     private async Task ShowActiveTabAsync()
     {
+        CloseOverlay();
         DismissPasswordPopup();
+        _address.Text = ActiveTab.CurrentUrl is null or "about:blank" ? "" : ActiveTab.CurrentUrl;
         foreach (var runtime in _runtimes.Values)
         {
             if (runtime.Tab != ActiveTab && runtime.View.Visible)
@@ -123,106 +125,30 @@ internal sealed partial class MainForm
             if (runtime is null) runtime = await CreateViewAsync(ActiveTab);
             if (_closing || runtime.View.IsDisposed) return;
             runtime.LastUsedUtc = DateTimeOffset.UtcNow;
+            runtime.View.CoreWebView2.Resume();
             runtime.View.Visible = true;
             runtime.View.BringToFront();
             runtime.View.Focus();
             _status.Text = runtime.Loading ? "Загрузка страницы…" : "Готово";
         }
         SetMemoryTargets();
-        await EvictOverBudgetAsync();
         RefreshChrome();
         UpdateMemory();
     }
 
-    internal Task UnloadIdleTabsAsync(DateTimeOffset now) => TransitionAsync(async () =>
-    {
-        foreach (var runtime in _runtimes.Values.ToArray())
-        {
-            if (TabUnloadPolicy.ShouldUnload(runtime.Tab == ActiveTab, HasProtectedActivity(runtime),
-                runtime.LastUsedUtc, now, TimeSpan.FromMinutes(_preferences.UnloadAfterMinutes)))
-                await TryUnloadAsync(runtime);
-        }
-        await EvictOverBudgetAsync();
-        RefreshChrome();
-        UpdateMemory();
-    });
-
+    // Retained names keep command bindings stable; these operations now suspend, never discard.
+    internal Task UnloadIdleTabsAsync(DateTimeOffset now) => FreezeIdleTabsAsync(now);
     internal Task UnloadBackgroundTabsAsync() => TransitionAsync(async () =>
     {
         foreach (var runtime in _runtimes.Values.Where(r => r.Tab != ActiveTab).ToArray())
-            await TryUnloadAsync(runtime);
-        RefreshChrome();
-        UpdateMemory();
+            await FreezeRuntimeAsync(runtime);
+        _tabs.Invalidate();
     });
-
-    private async Task EvictOverBudgetAsync()
-    {
-        foreach (var runtime in _runtimes.Values.Where(r => r.Tab != ActiveTab).OrderBy(r => r.LastUsedUtc).ToArray())
-        {
-            if (LiveViewCount <= _preferences.MaximumResidentTabs) break;
-            await TryUnloadAsync(runtime);
-        }
-    }
-
-    private bool _budgetEvictionQueued;
-
-    private void QueueBudgetEviction()
-    {
-        if (_budgetEvictionQueued || _closing || LiveViewCount <= _preferences.MaximumResidentTabs) return;
-        _budgetEvictionQueued = true;
-        RunUi(async () =>
-        {
-            try
-            {
-                await TransitionAsync(async () =>
-                {
-                    await EvictOverBudgetAsync();
-                    _tabs.Invalidate();
-                    UpdateMemory();
-                });
-            }
-            finally { _budgetEvictionQueued = false; }
-        });
-    }
-
     private static bool HasProtectedActivity(TabRuntime runtime)
     {
-        try { return runtime.Loading || runtime.DownloadCount > 0 || runtime.View.CoreWebView2.IsDocumentPlayingAudio; }
+        try { return runtime.Loading || runtime.DownloadCount > 0 || runtime.PendingRequests.Count > 0 || runtime.View.CoreWebView2.IsDocumentPlayingAudio; }
         catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException) { return true; }
     }
-
-    private async Task TryUnloadAsync(TabRuntime runtime)
-    {
-        if (runtime.Tab == ActiveTab || HasProtectedActivity(runtime)) return;
-        try
-        {
-            // Return only a boolean and scroll coordinates. Form contents never leave the page.
-            const string snapshot = """
-                (() => {
-                  const dirty = doc => {
-                    if(doc.querySelector('[contenteditable]:not([contenteditable="false"])'))return true;
-                    if([...doc.querySelectorAll('input,textarea,select')].some(e=>{
-                      if(e.tagName==='SELECT')return [...e.options].some(o=>o.selected!==o.defaultSelected);
-                      if(['hidden','button','submit','reset','image'].includes(e.type))return false;
-                      return ['checkbox','radio'].includes(e.type)?e.checked!==e.defaultChecked:e.value!==e.defaultValue;
-                    }))return true;
-                    return [...doc.querySelectorAll('iframe,frame')].some(f=>{
-                      try { return !f.contentDocument || dirty(f.contentDocument); } catch { return true; }
-                    });
-                  };
-                  return {x:scrollX,y:scrollY,dirty:dirty(document)};
-                })()
-                """;
-            string json = await runtime.View.CoreWebView2.ExecuteScriptAsync(snapshot);
-            using var state = JsonDocument.Parse(json);
-            if (state.RootElement.GetProperty("dirty").GetBoolean()) return;
-            runtime.Tab.ScrollX = state.RootElement.GetProperty("x").GetDouble();
-            runtime.Tab.ScrollY = state.RootElement.GetProperty("y").GetDouble();
-            if (runtime.Tab != ActiveTab && !HasProtectedActivity(runtime)) DestroyView(runtime.Tab.Id);
-        }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException or System.Runtime.InteropServices.COMException) { }
-    }
-
     private void DestroyView(Guid id)
     {
         if (!_runtimes.Remove(id, out var runtime)) return;

@@ -21,6 +21,8 @@ internal sealed partial class MainForm
     {
         Action? action = keys switch
         {
+            Keys.F10 => ShowMainMenu,
+            Keys.Escape when _overlay is not null => CloseOverlay,
             Keys.Control | Keys.L => FocusAddress,
             Keys.Alt | Keys.D => FocusAddress,
             Keys.Control | Keys.T => () => RunUi(() => OpenTabAsync()),

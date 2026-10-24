@@ -6,7 +6,8 @@ namespace Feather;
 internal sealed class BrowserPreferences
 {
     public int UnloadAfterMinutes { get; set; } = 5;
-    public int MaximumResidentTabs { get; set; } = 8;
+    public bool NetworkSuggestions { get; set; } = true;
+    public string Wallpaper { get; set; } = "rain-city.jpg";
 
     internal static BrowserPreferences Load(string dataPath)
     {
@@ -16,7 +17,7 @@ internal sealed class BrowserPreferences
             if (!File.Exists(path)) return new();
             var settings = JsonSerializer.Deserialize<BrowserPreferences>(File.ReadAllText(path)) ?? new();
             settings.UnloadAfterMinutes = Math.Clamp(settings.UnloadAfterMinutes, 1, 120);
-            settings.MaximumResidentTabs = Math.Clamp(settings.MaximumResidentTabs, 1, 32);
+            if (settings.Wallpaper is not ("rain-city.jpg" or "save-point.jpg")) settings.Wallpaper = "rain-city.jpg";
             return settings;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return new(); }
@@ -30,8 +31,9 @@ internal sealed class BrowserPreferences
     }
 }
 
-internal static class TabUnloadPolicy
+internal static class TabFreezePolicy
 {
-    internal static bool ShouldUnload(bool isActive, bool protectedActivity, DateTimeOffset lastUsed,
-        DateTimeOffset now, TimeSpan timeout) => !isActive && !protectedActivity && now - lastUsed >= timeout;
+    internal static bool ShouldFreeze(bool foreground, bool protectedActivity, DateTimeOffset inactiveSince,
+        DateTimeOffset lastNetworkActivity, DateTimeOffset now, TimeSpan timeout) => !foreground && !protectedActivity &&
+        now - inactiveSince >= timeout && now - lastNetworkActivity >= timeout;
 }

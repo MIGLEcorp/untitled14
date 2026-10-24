@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -16,12 +16,11 @@ internal sealed partial class MainForm : BrowserWindow
     private readonly TextBox _address = new();
     private readonly Panel _viewport = new() { Dock = DockStyle.Fill, BackColor = Palette.Background };
     private readonly HomeSurface _home = new();
-    private readonly Label _status = new(), _memory = new();
+    private readonly Label _status = new();
     private readonly Button _back = Palette.Button("←", "Назад (Alt+←)");
     private readonly Button _forward = Palette.Button("→", "Вперёд (Alt+→)");
     private readonly Button _reload = Palette.Button("↻", "Обновить (F5)");
     private readonly ToolTip _tips = new();
-    private readonly System.Windows.Forms.Timer _memoryTimer = new() { Interval = 5000 };
     private readonly System.Windows.Forms.Timer _idleTimer = new() { Interval = 15000 };
     private readonly System.Windows.Forms.Timer _saveTimer = new() { Interval = 800 };
     private readonly SemaphoreSlim _transition = new(1, 1);
@@ -30,7 +29,7 @@ internal sealed partial class MainForm : BrowserWindow
     private CoreWebView2Environment? _environment;
     private bool _closing;
     private readonly bool _smoke;
-    private readonly ContextMenuStrip _menu = new();
+    private GlassPanel? _menu;
 
     internal string DataPath { get; }
     internal Task ReadyTask => _ready.Task;
@@ -47,6 +46,7 @@ internal sealed partial class MainForm : BrowserWindow
         DataPath = dataPath;
         _smoke = smoke;
         _preferences = BrowserPreferences.Load(dataPath);
+        AnimeArtwork.FileName = _preferences.Wallpaper;
         ThemeSettings.Load(dataPath);
         _session = SessionStore.Load(Path.Combine(dataPath, "session.json"));
         Text = "Feather";
@@ -60,17 +60,18 @@ internal sealed partial class MainForm : BrowserWindow
         BuildChrome();
         InitializeWindowFrame(_tabs);
         Palette.Apply(this);
-        Palette.Apply(_menu);
-        _tabs.IsTabLoaded = id => _runtimes.ContainsKey(id);
+
+        _tabs.IsTabLoaded = id => _runtimes.TryGetValue(id, out var runtime) && runtime.View.CoreWebView2?.IsSuspended != true;
         _tabs.TabSelected += index => RunUi(() => SelectTabAsync(index));
         _tabs.TabClosed += index => RunUi(() => CloseTabAsync(index));
         _tabs.NewTab += () => RunUi(() => OpenTabAsync());
         _home.Navigate += input => RunUi(() => NavigateInputAsync(input));
-        _memoryTimer.Tick += (_, _) => UpdateMemory();
         _idleTimer.Tick += (_, _) => RunUi(() => UnloadIdleTabsAsync(DateTimeOffset.UtcNow));
         _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); SaveSession(); };
         Resize += (_, _) => { SetMemoryTargets(); DismissPasswordPopup(); };
         Move += (_, _) => DismissPasswordPopup();
+        Deactivate += (_, _) => { _inactiveSinceUtc = DateTimeOffset.UtcNow; DismissPasswordPopup(); };
+        Activated += (_, _) => ResumeActivePage();
         Shown += async (_, _) =>
         {
             try
@@ -79,7 +80,6 @@ internal sealed partial class MainForm : BrowserWindow
                 _ready.TrySetResult();
             }
             catch (Exception ex) { _ready.TrySetException(ex); ShowError(ex); }
-            _memoryTimer.Start();
             _idleTimer.Start();
             UpdateMemory();
         };
@@ -145,14 +145,7 @@ internal sealed partial class MainForm : BrowserWindow
         return new(working, committed, count);
     }
 
-    private void UpdateMemory()
-    {
-        if (_closing) return;
-        var memory = ReadMemory();
-        int sleeping = _session.Tabs.Count(t => t.CurrentUrl is not null and not "about:blank" && !_runtimes.ContainsKey(t.Id));
-        _memory.Text = $"≈ {memory.WorkingSetBytes / 1048576d:N0} МБ · {LiveViewCount} в памяти / {sleeping} спят";
-        _tips.SetToolTip(_memory, $"Приложение + WebView2: {memory.ProcessCount} процессов.\nОбщие страницы памяти могут считаться повторно.\nЧастная выделенная память: {memory.PrivateBytes / 1048576d:N0} МБ.\nВыгрузка через {_preferences.UnloadAfterMinutes} мин.; максимум {_preferences.MaximumResidentTabs} обычных страниц в памяти.\nМузыка и загрузки защищены от автоматической выгрузки.");
-    }
+    private void UpdateMemory() => _tabs.Invalidate();
 
     private async void RunUi(Func<Task> action)
     {
@@ -176,7 +169,6 @@ internal sealed partial class MainForm : BrowserWindow
         base.OnFormClosing(e);
         if (e.Cancel) return;
         _closing = true;
-        _memoryTimer.Stop();
         _idleTimer.Stop();
         _saveTimer.Stop();
         SaveSession();
@@ -189,11 +181,12 @@ internal sealed partial class MainForm : BrowserWindow
         {
             _closing = true;
             DismissPasswordPopup();
-            _memoryTimer.Dispose();
             _idleTimer.Dispose();
             _saveTimer.Dispose();
             _tips.Dispose();
-            _menu.Dispose();
+            CloseOverlay();
+            _suggestionCancellation?.Cancel();
+            _faviconCache?.Dispose();
             DestroyAllViews();
         }
         base.Dispose(disposing);

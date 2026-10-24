@@ -26,6 +26,15 @@ internal class BrowserWindow : Form
         SetStyle(ControlStyles.ResizeRedraw, true);
     }
 
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        int rounded = 2;
+        DwmSetWindowAttribute(Handle, 33, ref rounded, sizeof(int));
+    }
+
+    [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(nint window, int attribute, ref int value, int size);
+
     protected override CreateParams CreateParams
     {
         get
@@ -75,7 +84,7 @@ internal class BrowserWindow : Form
             WindowState = FormWindowState.Normal;
             _hiddenInFullscreen.Clear();
             foreach (Control control in Controls)
-                if (control.Visible && control.Dock is DockStyle.Top or DockStyle.Bottom)
+                if (control.Visible && control.Tag as string != "fullscreen-visible" && control.Dock is DockStyle.Top or DockStyle.Bottom)
                 {
                     _hiddenInFullscreen.Add(control);
                     control.Visible = false;

@@ -138,10 +138,11 @@ public static class CoreTests
             {
                 var now = DateTimeOffset.UtcNow;
                 var timeout = TimeSpan.FromMinutes(5);
-                Assert(!TabUnloadPolicy.ShouldUnload(false, false, now.AddMinutes(-4), now, timeout), "Early eviction");
-                Assert(TabUnloadPolicy.ShouldUnload(false, false, now.AddMinutes(-5), now, timeout), "Timeout boundary");
-                Assert(!TabUnloadPolicy.ShouldUnload(true, false, now.AddHours(-1), now, timeout), "Active tab evicted");
-                Assert(!TabUnloadPolicy.ShouldUnload(false, true, now.AddHours(-1), now, timeout), "Protected tab evicted");
+                Assert(!TabFreezePolicy.ShouldFreeze(false, false, now.AddMinutes(-4), now.AddMinutes(-8), now, timeout), "Early freeze");
+                Assert(TabFreezePolicy.ShouldFreeze(false, false, now.AddMinutes(-5), now.AddMinutes(-5), now, timeout), "Timeout boundary");
+                Assert(!TabFreezePolicy.ShouldFreeze(true, false, now.AddHours(-1), now.AddHours(-1), now, timeout), "Foreground freeze");
+                Assert(!TabFreezePolicy.ShouldFreeze(false, true, now.AddHours(-1), now.AddHours(-1), now, timeout), "Protected activity freeze");
+                Assert(!TabFreezePolicy.ShouldFreeze(false, false, now.AddHours(-1), now.AddMinutes(-1), now, timeout), "Recent network activity ignored");
             });
 
             Check("Preferences and themes persist and recover invalid settings", () =>
@@ -149,13 +150,13 @@ public static class CoreTests
                 var settingsPath = Path.Combine(folder, "preferences");
                 Directory.CreateDirectory(settingsPath);
                 var settings = BrowserPreferences.Load(settingsPath);
-                Assert(settings.UnloadAfterMinutes == 5 && settings.MaximumResidentTabs == 8, "Wrong defaults");
+                Assert(settings.UnloadAfterMinutes == 5, "Wrong default timeout");
                 settings.UnloadAfterMinutes = 15;
                 settings.Save(settingsPath);
                 Assert(BrowserPreferences.Load(settingsPath).UnloadAfterMinutes == 15, "Settings lost");
                 File.WriteAllText(Path.Combine(settingsPath, "preferences.json"), "{\"UnloadAfterMinutes\":-1,\"MaximumResidentTabs\":900}");
                 settings = BrowserPreferences.Load(settingsPath);
-                Assert(settings.UnloadAfterMinutes == 1 && settings.MaximumResidentTabs == 32, "Settings bounds");
+                Assert(settings.UnloadAfterMinutes == 1, "Settings bounds");
                 ThemeSettings.Load(settingsPath);
                 Assert(ThemeSettings.Current == BrowserTheme.Anime, "Anime must be default");
                 ThemeSettings.Select(BrowserTheme.Light, settingsPath);
@@ -175,6 +176,23 @@ public static class CoreTests
                 SessionStore.Save(path, session);
                 var tab = SessionStore.Load(path).Tabs[0];
                 Assert(tab.ScrollY == 1700 && tab.ScrollX == 0, "Scroll storage or bounds");
+            });
+
+            Check("Extension manifests expose hosts and reject unsupported formats", () =>
+            {
+                string package = Path.Combine(folder, "package"); Directory.CreateDirectory(package);
+                File.WriteAllText(Path.Combine(package, "manifest.json"), """
+                    {"manifest_version":3,"name":"fixture","version":"1.0","permissions":["storage"],"content_scripts":[{"matches":["https://example.test/*"],"js":["content.js"]}]}
+                    """);
+                File.WriteAllText(Path.Combine(package, "content.js"), "// fixture");
+                var manifest = ExtensionPackage.Read(package);
+                Assert(manifest.Permissions.Contains("storage") && manifest.Permissions.Contains("https://example.test/*"), "Permissions omitted from review");
+                string copy = Path.Combine(folder, "installed"); ExtensionPackage.Copy(package, copy);
+                Assert(File.Exists(Path.Combine(copy, "content.js")), "Package was not copied");
+                File.WriteAllText(Path.Combine(package, "manifest.json"), "{\"manifest_version\":2}");
+                bool rejected = false;
+                try { ExtensionPackage.Read(package); } catch (InvalidDataException) { rejected = true; }
+                Assert(rejected, "Unsupported manifest accepted");
             });
 
             FeatureModule.RunTests(Check, folder);

@@ -35,7 +35,7 @@ internal static class AutofillPageScripts
 
     internal static string Probe(bool focusedOnly) => "(() => { if (window !== window.top || !window.isSecureContext) return null; " + LoginFields +
         "const login = findLogin(); if (!login" + (focusedOnly ? " || ![login.password, login.user].includes(document.activeElement)" : "") +
-        ") return null; const rect = login.anchor.getBoundingClientRect(); return { origin: location.origin, x: rect.x, y: rect.y, width: rect.width, height: rect.height, viewportWidth: innerWidth, viewportHeight: innerHeight }; })()";
+        ") return null; const rect = login.anchor.getBoundingClientRect(); return { origin: location.origin, focused:[login.password,login.user].includes(document.activeElement), x: rect.x, y: rect.y, width: rect.width, height: rect.height, viewportWidth: innerWidth, viewportHeight: innerHeight }; })()";
 
     internal static string Observer => """
         (() => {
@@ -56,6 +56,11 @@ internal static class AutofillPageScripts
             };
             const ready = () => { clearTimeout(pending); pending = setTimeout(() => post('ready'), 120); };
             document.addEventListener('focusin', () => queueMicrotask(() => post('focus')), true);
+            document.addEventListener('pointerdown', event => {
+                const login = findLogin();
+                if (login && ![login.user, login.password].includes(event.target))
+                    window.chrome.webview.postMessage({type:'feather.credentials', kind:'dismiss', origin:location.origin});
+            }, true);
             document.addEventListener('focusout', () => setTimeout(() => {
                 const login = findLogin();
                 if (!login || ![login.password, login.user].includes(document.activeElement))

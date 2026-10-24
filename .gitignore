@@ -9,3 +9,6 @@ core-results.txt
 core-errors.txt
 **/bin/
 **/obj/
+
+artifacts/
+preview-menu.png

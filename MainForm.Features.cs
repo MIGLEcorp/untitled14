@@ -17,7 +17,7 @@ internal sealed partial class MainForm
 
     private void OpenFeature(string method, params object?[] arguments)
     {
-        try { FeatureModule.Invoke(DataPath, method, arguments); }
+        try { FeatureModule.Invoke(DataPath, method, arguments); RefreshBookmarks(); }
         catch (Exception ex) { ShowError(ex); }
     }
 
@@ -42,7 +42,7 @@ internal sealed partial class MainForm
                 {
                     // Import may be opened from the native home. Do not create a dummy tab or navigate away.
                     _environment ??= await CoreWebView2Environment.CreateAsync(null, Path.Combine(DataPath, "WebView2"),
-                        new CoreWebView2EnvironmentOptions { Language = "ru-RU" });
+                        EnvironmentOptions());
                     temporary = new WebView2 { Visible = false, Size = new Size(1, 1) };
                     _viewport.Controls.Add(temporary);
                     await temporary.EnsureCoreWebView2Async(_environment);
@@ -110,7 +110,7 @@ internal sealed partial class MainForm
     {
         ThemeSettings.Select(theme, DataPath);
         Palette.Apply(this);
-        Palette.Apply(_menu);
+        if (_menu is not null) Palette.Apply(_menu);
         _home.RefreshTheme();
         foreach (var runtime in _runtimes.Values)
         {
