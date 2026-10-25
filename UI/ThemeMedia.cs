@@ -163,7 +163,7 @@ internal static class ThemeMedia
 
 internal sealed class ChromeHost : ThemePanel
 {
-    internal ChromeHost() { Area = ThemeArea.Chrome; Tag = "fullscreen-visible"; Dock = DockStyle.Top; Height = 143; }
+    internal ChromeHost() { Area = ThemeArea.Chrome; Dock = DockStyle.Top; Height = 143; }
 }
 
 internal class ThemePanel : Panel

@@ -55,6 +55,7 @@ internal static class SmokeTests
             Check(!form.Controls.Cast<Control>().Any(control=>control.Dock==DockStyle.Bottom),"The memory footer is absent");
             var retained=form.ActiveCore!;
             Check(await retained.ExecuteScriptAsync("window.smokeProbe")=="42","Real JavaScript executes in the installed engine");
+            await WindowFrameTests.RunSiteFullscreenAsync(form,Check);
             await retained.ExecuteScriptAsync("window.retainedState={value:73};let draft=document.createElement('input');draft.id='draft';document.body.append(draft);draft.value='unsaved draft'");
             await form.OpenTabAsync();
             Check(form.BookmarksVisibleForTest,"Opening a new home tab restores the bookmarks row");

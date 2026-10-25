@@ -1,4 +1,4 @@
-#define AppVersion "4.2.0"
+#define AppVersion "4.2.1"
 [Setup]
 AppId={{B4E6167D-3A9C-41E6-A0A2-9176BEDDAC12}
 AppName=MBrowser

@@ -57,17 +57,19 @@ internal sealed partial class MainForm
         _chromeHost.Controls.Add(toolbar);
         _chromeHost.Controls.Add(_tabs);
         Controls.Add(_chromeHost);
-        toolbar.Tag = "fullscreen-visible";
-        _bookmarkBar.Tag = "fullscreen-visible";
         InitializeBookmarksAndSuggestions();
     }
 
     private void UpdateChromeLayout()
     {
-        _bookmarkBar.Visible = ActiveTab.CurrentUrl is null or "about:blank";
-        _chromeHost.Height = (IsFullScreen ? 0 : TitleBarHeight) + _toolbar.Height + (_bookmarkBar.Visible ? _bookmarkBar.Height : 0);
+        bool isHome = ActiveTab.CurrentUrl is null or "about:blank";
+        _bookmarkBar.Visible = isHome;
+        _chromeHost.Visible = !IsFullScreen;
+        // Visible includes the parent's visibility. Use the page state to restore the home row correctly.
+        _chromeHost.Height = IsFullScreen ? 0 : TitleBarHeight + _toolbar.Height + (isHome ? _bookmarkBar.Height : 0);
         _chromeHost.Invalidate(true);
     }
     internal bool BookmarksVisibleForTest => _bookmarkBar.Visible;
     internal Control ChromeHostForTest => _chromeHost;
+    internal Control ViewportForTest => _viewport;
 }

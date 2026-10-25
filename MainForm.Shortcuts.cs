@@ -4,7 +4,16 @@ namespace MBrowser;
 
 internal sealed partial class MainForm
 {
-    private void FocusAddress() { _address.Focus(); _address.SelectAll(); }
+    private void FocusAddress()
+    {
+        if (IsFullScreen)
+        {
+            RunUi(async () => { await ExitFullscreenAsync(); _address.Focus(); _address.SelectAll(); });
+            return;
+        }
+        _address.Focus();
+        _address.SelectAll();
+    }
 
     private void ShowDownloads()
     {

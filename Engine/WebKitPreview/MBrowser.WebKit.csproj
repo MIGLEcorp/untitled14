@@ -9,7 +9,7 @@
     <Product>MBrowser</Product>
     <Title>MBrowser WebKit</Title>
     <ApplicationIcon>..\..\assets\mbrowser.ico</ApplicationIcon>
-    <Version>4.2.0</Version>
+    <Version>4.2.1</Version>
     <RootNamespace>MBrowser.WebKit</RootNamespace>
     <PlatformTarget>x64</PlatformTarget>
     <ServerGarbageCollection>false</ServerGarbageCollection>
