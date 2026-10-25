@@ -286,15 +286,15 @@ internal sealed class TabStrip : Control
 
 internal sealed class HomeSurface : Panel
 {
-    private readonly GlassPanel _searchBox = new() { UseArtwork = false, Size = new Size(620, 62), Padding = new Padding(22, 20, 20, 16) };
+    private readonly PillInput _searchBox;
     internal TextBox SearchBox { get; } = new() { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None,
         BackColor = Palette.Surface, ForeColor = Palette.Text, Font = new Font("Segoe UI", 13), PlaceholderText = "Поиск или адрес сайта" };
     public event Action<string>? Navigate;
     public HomeSurface()
     {
+        _searchBox = new PillInput(SearchBox) { Size = new Size(620,62) };
         Dock = DockStyle.Fill;
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        _searchBox.Controls.Add(SearchBox);
         Controls.Add(_searchBox);
         SearchBox.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; Navigate?.Invoke(SearchBox.Text); } };
         Resize += (_, _) => CenterSearch();

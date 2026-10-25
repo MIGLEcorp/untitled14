@@ -44,6 +44,8 @@ internal sealed partial class MainForm
             await view.EnsureCoreWebView2Async(_environment);
             if (!IsAlive(runtime)) return runtime;
             ConfigureView(runtime);
+            try { await EnsureTranslatorAsync(view.CoreWebView2); }
+            catch(Exception ex) { Program.LogError(DataPath,ex); _status.Text="Переводчик не подключён: " + ex.Message; }
             await ConfigureActivityTrackingAsync(runtime);
             await ConfigurePasswordAutofillAsync(runtime);
             if (!IsAlive(runtime)) return runtime;
@@ -64,6 +66,7 @@ internal sealed partial class MainForm
         core.Settings.IsGeneralAutofillEnabled = true;
         SetPageColorScheme(core);
         ConfigurePermissions(runtime);
+        ConfigureImageTranslation(runtime);
         view.GotFocus += (_, _) => CloseOverlay();
         core.FaviconChanged += (_, _) => RunUi(async () =>
         {
@@ -76,7 +79,7 @@ internal sealed partial class MainForm
         {
             if (!IsAlive(runtime)) return;
             if (tab == ActiveTab) { DismissPasswordPopup(); CloseOverlay(); }
-            if (!IsWebAddress(e.Uri))
+            if (!IsNavigable(runtime,e.Uri))
             {
                 e.Cancel = true;
                 runtime.ProgrammaticNavigation = runtime.Loading = false;
@@ -98,7 +101,7 @@ internal sealed partial class MainForm
         };
         core.SourceChanged += (_, e) =>
         {
-            if (!IsAlive(runtime) || !IsWebAddress(core.Source)) return;
+            if (!IsAlive(runtime) || !IsNavigable(runtime,core.Source)) return;
             if (runtime.Loading && e.IsNewDocument && !runtime.TraversingHistory) tab.ReplaceCurrent(core.Source);
             else RunUi(() => SynchronizeNativeHistoryAsync(runtime));
             OnRuntimeChanged(runtime);
@@ -108,7 +111,7 @@ internal sealed partial class MainForm
         {
             if (!IsAlive(runtime)) return;
             string title = core.DocumentTitle;
-            tab.Title = string.IsNullOrWhiteSpace(title) ? new Uri(core.Source).Host : title[..Math.Min(300, title.Length)];
+            tab.Title = string.IsNullOrWhiteSpace(title) ? new Uri(core.Source).IsFile ? Path.GetFileName(new Uri(core.Source).LocalPath) : new Uri(core.Source).Host : title[..Math.Min(300, title.Length)];
             OnRuntimeChanged(runtime);
         };
         core.NavigationCompleted += async (_, e) =>
@@ -137,6 +140,7 @@ internal sealed partial class MainForm
             if (IsAlive(runtime) && tab == ActiveTab && IsWebAddress(e.Uri))
             {
                 string uri = e.Uri;
+                if(_smoke && Uri.TryCreate(uri,UriKind.Absolute,out var testUri) && !testUri.IsLoopback) return;
                 BeginInvoke(() => RunUi(() => OpenTabAsync(uri)));
             }
         };
@@ -187,7 +191,7 @@ internal sealed partial class MainForm
             int index = document.RootElement.GetProperty("currentIndex").GetInt32();
             var entry = document.RootElement.GetProperty("entries")[index];
             string? url = entry.GetProperty("url").GetString();
-            if (url is null || !IsWebAddress(url) || url == "about:blank") return;
+            if (url is null || !IsNavigable(runtime,url) || url == "about:blank") return;
             int id = entry.GetProperty("id").GetInt32();
             var tab = runtime.Tab;
             if ((runtime.Loading && !runtime.TraversingHistory) || runtime.NativeIndex < 0)
@@ -231,6 +235,7 @@ internal sealed partial class MainForm
     }
 
     private static bool IsWebAddress(string value) => value == "about:blank" || AddressParser.TryWebUrl(value, out _);
+    private static bool IsNavigable(TabRuntime runtime,string value) => IsWebAddress(value) || BrowserDocuments.IsApproved(value,runtime.Tab.LocalDocuments);
 
     private static void SetPageColorScheme(CoreWebView2 core) => core.Profile.PreferredColorScheme =
         ThemeSettings.Current == BrowserTheme.Light ? CoreWebView2PreferredColorScheme.Light : CoreWebView2PreferredColorScheme.Dark;

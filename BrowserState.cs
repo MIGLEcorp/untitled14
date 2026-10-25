@@ -11,6 +11,7 @@ public sealed class BrowserTab
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Title { get; set; } = "Новая вкладка";
     public List<string> History { get; set; } = [];
+    public List<string> LocalDocuments { get; set; } = [];
     public int HistoryIndex { get; set; } = -1;
     // Only scroll coordinates are persisted when a page is unloaded; form values are never serialized.
     public double ScrollX { get; set; }
@@ -224,6 +225,7 @@ public static class SessionStore
                 Title = string.IsNullOrWhiteSpace(tab.Title) ? "Новая вкладка" : tab.Title[..Math.Min(tab.Title.Length, 300)],
                 History = [],
                 HistoryIndex = -1,
+                LocalDocuments = (tab.LocalDocuments ?? []).Take(80).Select(value => BrowserDocuments.TryResolve(value,out var file) ? file : "").Where(value => value.Length>0).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
                 ScrollX = double.IsFinite(tab.ScrollX) ? Math.Clamp(tab.ScrollX, 0, 100_000_000) : 0,
                 ScrollY = double.IsFinite(tab.ScrollY) ? Math.Clamp(tab.ScrollY, 0, 100_000_000) : 0
             };
@@ -239,7 +241,10 @@ public static class SessionStore
                 if (entry == "about:blank")
                     validUrl = entry;
                 else if (!AddressParser.TryWebUrl(entry, out validUrl))
-                    continue;
+                {
+                    if(!BrowserDocuments.IsApproved(entry,copy.LocalDocuments)) continue;
+                    validUrl = entry;
+                }
                 copy.History.Add(validUrl);
                 if (i <= sourceIndex)
                     copy.HistoryIndex = copy.History.Count - 1;

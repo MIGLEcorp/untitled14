@@ -7,6 +7,8 @@ internal sealed class BrowserPreferences
 {
     public int UnloadAfterMinutes { get; set; } = 5;
     public bool NetworkSuggestions { get; set; } = true;
+    public string ImageOcrLanguage { get; set; } = "en-US";
+    public string ImageTargetLanguage { get; set; } = "ru";
     public string Wallpaper { get; set; } = "rain-city.jpg";
 
     internal static BrowserPreferences Load(string dataPath)
@@ -17,6 +19,8 @@ internal sealed class BrowserPreferences
             if (!File.Exists(path)) return new();
             var settings = JsonSerializer.Deserialize<BrowserPreferences>(File.ReadAllText(path)) ?? new();
             settings.UnloadAfterMinutes = Math.Clamp(settings.UnloadAfterMinutes, 1, 120);
+            if (settings.ImageOcrLanguage is null || settings.ImageOcrLanguage.Length > 30) settings.ImageOcrLanguage = "";
+            if (settings.ImageTargetLanguage is not ("ru" or "en" or "ja" or "de" or "fr" or "es" or "zh-CN")) settings.ImageTargetLanguage = "ru";
             if (settings.Wallpaper is not ("rain-city.jpg" or "save-point.jpg")) settings.Wallpaper = "rain-city.jpg";
             return settings;
         }

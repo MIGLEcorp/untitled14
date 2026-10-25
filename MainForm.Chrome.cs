@@ -9,6 +9,7 @@ internal sealed partial class MainForm
         var toolbar = _toolbar;
         toolbar.Dock = DockStyle.Top; toolbar.Height = 58; toolbar.Padding = new Padding(10);
         toolbar.ColumnCount = 8; toolbar.RowCount = 1; toolbar.BackColor = Palette.Surface;
+        toolbar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         for (int i = 0; i < 4; i++) toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 44));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 44));
@@ -25,8 +26,7 @@ internal sealed partial class MainForm
         toolbar.Controls.Add(home, 3, 0);
         foreach (var button in new[] { _back, _forward, _reload, home }) _tips.SetToolTip(button, button.AccessibleName);
 
-        var addressBox = new GlassPanel { UseArtwork = false, Dock = DockStyle.Fill, BackColor = Palette.Raised, Padding = new Padding(12, 7, 12, 6), Margin = new Padding(5, 0, 7, 0) };
-        _address.Dock = DockStyle.Fill;
+        var addressBox = new PillInput(_address) { Dock = DockStyle.Fill, Size = new Size(200,34), Margin = new Padding(5, 0, 7, 0) };
         _address.BorderStyle = BorderStyle.None;
         _address.BackColor = Palette.Raised;
         _address.ForeColor = Palette.Text;
@@ -39,7 +39,6 @@ internal sealed partial class MainForm
             e.SuppressKeyPress = true;
             RunUi(() => NavigateInputAsync(_address.Text));
         };
-        addressBox.Controls.Add(_address);
         toolbar.Controls.Add(addressBox, 4, 0);
         var go = Palette.Button("Найти", "Перейти по адресу или искать", 67);
         go.Font = new Font("Segoe UI", 10);

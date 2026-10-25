@@ -26,6 +26,7 @@ internal sealed partial class MainForm
             Keys.Control | Keys.L => FocusAddress,
             Keys.Alt | Keys.D => FocusAddress,
             Keys.Control | Keys.T => () => RunUi(() => OpenTabAsync()),
+            Keys.Control | Keys.O => OpenDocument,
             Keys.Control | Keys.W => () => RunUi(() => CloseTabAsync(_session.SelectedIndex)),
             Keys.Control | Keys.Tab => () => RunUi(() => SelectTabAsync((_session.SelectedIndex + 1) % TabCount)),
             Keys.Control | Keys.Shift | Keys.Tab => () => RunUi(() => SelectTabAsync((_session.SelectedIndex + TabCount - 1) % TabCount)),

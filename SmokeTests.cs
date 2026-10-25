@@ -24,9 +24,18 @@ internal static class SmokeTests
             await form.ReadyTask.WaitAsync(TimeSpan.FromSeconds(40));
             Check(form.LiveViewCount==0,"Native home starts without a browser engine");
             Check(form.BookmarksVisibleForTest,"Bookmarks are visible on the native home page");
+            if(Environment.GetEnvironmentVariable("MBROWSER_TRANSLATOR_ONLY")=="1")
+            {
+                await using var translatorServer=new LocalPageServer();
+                await form.NavigateInputAsync(translatorServer.Origin+"one");
+                await WaitForPageAsync(form,translatorServer.Origin+"one","MBrowser smoke one");
+                await TranslatorTests.RunAsync(form,dataPath,Environment.GetEnvironmentVariable("MBROWSER_TRANSLATOR_TEST_ARCHIVE")!,Check);
+                Environment.ExitCode=0; return;
+            }
             int homeHeaderHeight = form.ChromeHostForTest.Height;
             int bookmarkRowHeight = form.ChromeHostForTest.Controls.OfType<ThemeBookmarks>().Single().Height;
             await ThemeTests.RunUiAsync(form, dataPath, Check);
+            await BrowserIntegrationTests.RunUiAsync(form,dataPath,Check);
             form.Refresh(); await Task.Delay(100);
             using(var bitmap=ThemeTests.Capture(form)) bitmap.Save("preview.png",ImageFormat.Png);
             await WindowFrameTests.RunAsync(form,Check);
@@ -89,6 +98,8 @@ internal static class SmokeTests
             Check((await retained.CookieManager.GetCookiesAsync(one)).Any(c=>c.Name=="fixture"&&c.IsHttpOnly),"Cookie import preserves session and HttpOnly flags");
             await PasswordAutofillTests.RunAsync(form,Check);
             Check(form.TabCount==1,"Autofill fixture closes its temporary tab");
+            if(Environment.GetEnvironmentVariable("MBROWSER_TRANSLATOR_TEST_ARCHIVE") is { Length: >0 } translatorArchive)
+                await TranslatorTests.RunAsync(form,dataPath,translatorArchive,Check);
             await form.HomeAsync();
             Check(form.LiveViewCount==0,"Explicitly leaving a site releases its view");
             Check(!File.Exists(Path.Combine(dataPath,"errors.log")),"No unhandled UI errors were logged");
@@ -145,7 +156,7 @@ internal static class SmokeTests
         throw new TimeoutException($"Script value did not become {expected}: {script}");
     }
 
-    private static async Task WaitUntilAsync(Func<bool> condition, string failureMessage)
+    internal static async Task WaitUntilAsync(Func<bool> condition, string failureMessage)
     {
         var watch = Stopwatch.StartNew();
         while (watch.Elapsed < TimeSpan.FromSeconds(15))

@@ -41,13 +41,22 @@ internal sealed partial class MainForm : BrowserWindow
     private TabRuntime? ActiveRuntime => _runtimes.GetValueOrDefault(ActiveTab.Id);
     internal CoreWebView2? ActiveCore => ActiveRuntime?.View.CoreWebView2;
 
-    public MainForm(string dataPath, bool smoke)
+    public MainForm(string dataPath, bool smoke, string[]? initialTargets = null)
     {
         DataPath = dataPath;
         _smoke = smoke;
         _preferences = BrowserPreferences.Load(dataPath);
         ThemeSettings.Load(dataPath);
         _session = SessionStore.Load(Path.Combine(dataPath, "session.json"));
+        foreach(string target in (initialTargets ?? []).Take(16))
+        {
+            if(_session.Tabs.Count>=100) break;
+            var tab=new BrowserTab();
+            if(AddressParser.TryWebUrl(target,out var url)) tab.Visit(url);
+            else if(BrowserDocuments.TryResolve(target,out var file)) { tab.Visit(file); tab.LocalDocuments.Add(file); }
+            else continue;
+            _session.Tabs.Add(tab); _session.SelectedIndex=_session.Tabs.Count-1;
+        }
         Text = "MBrowser";
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         Size = new Size(1180, 800);
@@ -171,6 +180,7 @@ internal sealed partial class MainForm : BrowserWindow
         base.OnFormClosing(e);
         if (e.Cancel) return;
         _closing = true;
+        ImageText.StopAll();
         _idleTimer.Stop();
         _saveTimer.Stop();
         SaveSession();

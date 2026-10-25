@@ -6,6 +6,8 @@ try {
     if ($Published) {
         $executable = Join-Path $PSScriptRoot 'dist\MBrowser.exe'
     } else {
+        dotnet build .\Engine\ImageOcr\MBrowser.Ocr.csproj -c Release --nologo
+        if ($LASTEXITCODE -ne 0) { throw 'OCR helper build failed.' }
         dotnet build .\MBrowser.csproj -c Release --nologo
         if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
         $executable = Join-Path $PSScriptRoot 'bin\Release\net10.0-windows\MBrowser.exe'

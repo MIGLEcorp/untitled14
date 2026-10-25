@@ -1,6 +1,6 @@
 # MBrowser extension API (v1)
 
-MBrowser 3 enables Chromium WebExtensions, Manifest V3. Install an unpacked folder through Menu → Extensions → Install from folder. The manifest's required/optional API permissions and host/content-script matches are shown before installation. Packages are copied into the private browser profile; edits to the original source do not silently change the installed extension. Reinstall after editing.
+MBrowser enables Chromium WebExtensions, Manifest V3. Install an unpacked folder through Menu → Extensions → Install from folder. The manifest's required/optional API permissions and host/content-script matches are shown before installation. Packages are copied into the private browser profile; edits to the original source do not silently change the installed extension. Reinstall after editing.
 
 ## Entry point
 
@@ -33,7 +33,7 @@ Add `"permissions": ["declarativeNetRequest"]`, the required `host_permissions`,
 [{"id":1,"priority":1,"action":{"type":"block"},"condition":{"urlFilter":"||ads.example.invalid^","resourceTypes":["script","image","xmlhttprequest"]}}]
 ```
 
-Request only the sites and APIs actually needed. Translation providers, credentials, lists of blocked domains and extension update distribution are left to each extension. MBrowser does not bundle an ad blocker or translator yet.
+Request only the sites and APIs actually needed. Translation providers, credentials, lists of blocked domains and extension update distribution are left to each extension. Menu → Translator installs the official, checksum-pinned Immersive Translate package on demand. Its options and popup pages have dedicated in-window surfaces; an ad blocker is not bundled.
 
 ## Runtime limits
 

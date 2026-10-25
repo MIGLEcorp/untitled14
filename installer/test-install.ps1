@@ -1,4 +1,4 @@
-param([string]$Installer = (Join-Path $PSScriptRoot '..\artifacts\MBrowser-4.1.0-Setup-x64.exe'))
+param([string]$Installer = (Join-Path $PSScriptRoot '..\artifacts\MBrowser-4.2.0-Setup-x64.exe'))
 $ErrorActionPreference = 'Stop'
 $installerPath = (Resolve-Path -LiteralPath $Installer).Path
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('MBrowser-install-' + [Guid]::NewGuid().ToString('N'))
@@ -12,7 +12,7 @@ Set-Content -LiteralPath (Join-Path $testApp 'preserved.txt') -Value 'preserve t
 # TESTMODE disables uninstall registration, shortcuts, launch and WebView2 installation.
 $process = Start-Process -FilePath $installerPath -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TESTMODE=1',('/DIR="' + $testApp + '"'),('/LOG="' + (Join-Path $testRoot 'install.log') + '"')) -WindowStyle Hidden -Wait -PassThru
 if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode). See $testRoot" }
-foreach ($file in @('MBrowser.exe','MBrowser.dll','coreclr.dll','Modules\MBrowser.Features.dll','assets\sakura-home.png','assets\sakura-menu.png','assets\sakura-header.png','assets\mbrowser.ico','assets\REN-PY-ART-LICENSE.txt','docs\menu.png','docs\theme-editor.png')) {
+foreach ($file in @('MBrowser.exe','MBrowser.dll','coreclr.dll','Modules\MBrowser.Features.dll','Features\ImageOcr\MBrowser.Ocr.exe','Features\ImageOcr\Microsoft.Windows.SDK.NET.dll','assets\sakura-home.png','assets\sakura-menu.png','assets\sakura-header.png','assets\mbrowser.ico','assets\REN-PY-ART-LICENSE.txt','docs\menu.png','docs\theme-editor.png','docs\image-translation.png')) {
     if (!(Test-Path -LiteralPath (Join-Path $testApp $file))) { throw "Missing installed file: $file" }
 }
 if (Test-Path -LiteralPath (Join-Path $testApp 'unins000.exe')) { throw 'Test installation unexpectedly registered an uninstaller.' }
@@ -25,6 +25,9 @@ $installedHash = (Get-FileHash -LiteralPath (Join-Path $testApp 'MBrowser.dll') 
 if ((Test-Path -LiteralPath $expected) -and $installedHash -ne (Get-FileHash -LiteralPath $expected -Algorithm SHA256).Hash) { throw 'Installed application does not match dist.' }
 $core = Start-Process -FilePath (Join-Path $testApp 'MBrowser.exe') -ArgumentList '--self-test' -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $testRoot 'core-results.txt') -RedirectStandardError (Join-Path $testRoot 'core-errors.txt')
 if ($core.ExitCode -ne 0) { throw "Installed application tests failed. See $testRoot" }
-$report = [PSCustomObject]@{ Passed=$true; InstallExitCode=$process.ExitCode; CoreExitCode=$core.ExitCode; ApplicationSha256=$installedHash; TestDirectory=$testRoot; ExistingBrowserProfileUsed=$false; Registered=$false }
+$languages = Join-Path $testRoot 'ocr-languages.json'
+$ocr = Start-Process -FilePath (Join-Path $testApp 'Features\ImageOcr\MBrowser.Ocr.exe') -ArgumentList @('--languages',('"' + $languages + '"')) -WindowStyle Hidden -Wait -PassThru
+if ($ocr.ExitCode -ne 0 -or !(Test-Path -LiteralPath $languages)) { throw "Installed OCR module failed. See $testRoot" }
+$report = [PSCustomObject]@{ Passed=$true; InstallExitCode=$process.ExitCode; CoreExitCode=$core.ExitCode; OcrExitCode=$ocr.ExitCode; ApplicationSha256=$installedHash; TestDirectory=$testRoot; ExistingBrowserProfileUsed=$false; Registered=$false }
 $report | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $testRoot 'result.json') -Encoding UTF8
 Write-Output ($report | ConvertTo-Json -Compress)

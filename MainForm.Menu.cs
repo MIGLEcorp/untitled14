@@ -27,6 +27,7 @@ internal sealed partial class MainForm
         _overlay = panel;
         _viewport.Controls.Add(panel);
         panel.BringToFront();
+        UiMotion.Reveal(panel);
     }
 
     internal void ShowMainMenu()
@@ -35,17 +36,20 @@ internal sealed partial class MainForm
         ShowMenuPage("MBrowser", rows =>
         {
             rows("Новая вкладка", () => RunUi(() => OpenTabAsync()));
+            rows("Открыть файл…", OpenDocument);
             rows(IsFullScreen ? "Выйти из полного экрана" : "Полный экран", ToggleFullScreen);
             rows("Закладки", ShowBookmarks);
             rows("Пароли", ShowPasswords);
             rows("Импорт данных…", ShowImport);
             rows("Загрузки", ShowDownloads);
             rows("Оформление  ›", ShowThemeMenu);
+            rows("Браузер по умолчанию…", BrowserRegistration.OpenSettings);
             rows("Подсказки DuckDuckGo: " + (_preferences.NetworkSuggestions ? "вкл." : "выкл."), () =>
             { _preferences.NetworkSuggestions = !_preferences.NetworkSuggestions; _preferences.Save(DataPath); });
             rows("Заморозить фоновые вкладки", () => RunUi(UnloadBackgroundTabsAsync));
             rows("Разрешения сайтов  ›", ShowPermissionSettings);
             rows("Расширения  ›", () => RunUi(ShowExtensionsAsync));
+            rows("Переводчик  ›", ShowTranslatorMenu);
             rows("Открыть в WebKit", () => RunUi(() => Engine.WebKitPreviewLauncher.LaunchAsync(this, ActiveTab.CurrentUrl, DataPath)));
             rows("Выход", Close);
         });

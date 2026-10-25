@@ -8,7 +8,12 @@ namespace MBrowser;
 
 internal sealed partial class MainForm
 {
-    private CoreWebView2EnvironmentOptions EnvironmentOptions() => new() { Language = "ru-RU", AreBrowserExtensionsEnabled = true };
+    private CoreWebView2EnvironmentOptions EnvironmentOptions() => new()
+    {
+        Language = "ru-RU", AreBrowserExtensionsEnabled = true,
+        // Native smoke windows are hidden by the test runner. Keep their render/idle queues running.
+        AdditionalBrowserArguments = _smoke ? "--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --disable-features=CalculateNativeWinOcclusion" : ""
+    };
 
     private async Task WithProfileCoreAsync(Func<CoreWebView2, Task> action)
     {

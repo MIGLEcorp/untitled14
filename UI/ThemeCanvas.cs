@@ -54,13 +54,13 @@ internal sealed class ThemeCanvas : Control
         TextRenderer.DrawText(g, "＋", Font, new Point(x + Math.Min(155, width / 3 + 12), y + 7), Palette.Text);
         int navigationY = y + ChromeRectangle.Height / 3 + 3;
         var address = new Rectangle(x + 62, navigationY, Math.Max(60, width - 116), 22);
-        using (var path = TabStrip.RoundedRectangle(address, 8)) g.FillPath(surface, path);
+        using (var path = TabStrip.RoundedRectangle(address, address.Height/2)) g.FillPath(surface, path);
         TextRenderer.DrawText(g, "‹   ›   ⌂", Font, new Point(x + 9, navigationY + 2), Palette.Text);
         TextRenderer.DrawText(g, "Поиск или адрес сайта", small, address, Palette.Muted, TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
         TextRenderer.DrawText(g, "☰", Font, new Point(x + width - 29, navigationY + 2), Palette.Text);
         if (ChromeRectangle.Height >= 65) TextRenderer.DrawText(g, "★  Закладки на главной     ♫  Музыка", small, new Point(x + 12, y + ChromeRectangle.Height * 2 / 3 + 3), Palette.Text);
         var search = new Rectangle(HomeRectangle.X + HomeRectangle.Width / 10, HomeRectangle.Y + HomeRectangle.Height / 3, HomeRectangle.Width * 3 / 5, 35);
-        using (var path = TabStrip.RoundedRectangle(search, 12)) g.FillPath(surface, path);
+        using (var path = TabStrip.RoundedRectangle(search, search.Height/2)) g.FillPath(surface, path);
         TextRenderer.DrawText(g, "Поиск в интернете", Font, search, Palette.Text, TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter);
         var menu = MenuRectangle;
         using (var menuShape = TabStrip.RoundedRectangle(menu, 12))

@@ -29,6 +29,7 @@ public static class CoreTests
         try
         {
             ThemeTests.RunCore(Check, folder);
+            BrowserIntegrationTests.RunCore(Check,folder);
             Check("Address parsing: domains, ports, loopback and Unicode", () =>
             {
                 Resolves(" example.com ", "https://example.com/");

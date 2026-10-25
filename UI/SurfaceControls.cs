@@ -38,14 +38,17 @@ internal class GlassPanel : Panel
 
 internal sealed class RoundedButton : Button
 {
+    private float _hover;
     internal RoundedButton() { FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0; DoubleBuffered = true; SetStyle(ControlStyles.SupportsTransparentBackColor, true); }
+    private void Hover(float target) { float start = _hover; UiMotion.Start(this,120,t => { _hover = start + (target-start)*t; Invalidate(); }); }
+    protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); Hover(1); }
+    protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); Hover(0); }
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaintBackground(e);
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         using var shape = TabStrip.RoundedRectangle(new Rectangle(1, 1, Width - 3, Height - 3), 11);
-        bool hovered = ClientRectangle.Contains(PointToClient(Cursor.Position));
-        using var fill = new SolidBrush(BackColor.A == 0 ? Color.FromArgb(hovered ? 165 : 80, Palette.Surface) : hovered ? Palette.Raised : BackColor);
+        using var fill = new SolidBrush(BackColor.A == 0 ? Color.FromArgb(80 + (int)(85*_hover), Palette.Surface) : UiMotion.Blend(BackColor,Palette.Raised,_hover));
         e.Graphics.FillPath(fill, shape);
         var textArea = Width <= 50 ? ClientRectangle : new Rectangle(8, 0, Width - 16, Height);
         if (Image is not null) { e.Graphics.DrawImage(Image, 10, (Height - 18) / 2, 18, 18); textArea.X += 26; textArea.Width -= 26; }

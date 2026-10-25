@@ -1,7 +1,8 @@
-#define AppVersion "4.1.0"
+#define AppVersion "4.2.0"
 [Setup]
 AppId={{B4E6167D-3A9C-41E6-A0A2-9176BEDDAC12}
 AppName=MBrowser
+MinVersion=10.0.19041
 AppMutex={code:GetAppMutex}
 AppVersion={#AppVersion}
 AppPublisher=MIGLEcorp
@@ -51,8 +52,11 @@ Type: files; Name: "{app}\Features\WebKit\Feather.WebKit.runtimeconfig.json"
 Type: files; Name: "{userprograms}\Feather\Feather.lnk"; Check: not IsTestInstall
 Type: files; Name: "{autodesktop}\Feather.lnk"; Check: not IsTestInstall
 [Run]
+Filename: "{app}\MBrowser.exe"; Parameters: "--register-browser"; Flags: runhidden waituntilterminated; Check: not IsTestInstall
 Filename: "{tmp}\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "Установка Microsoft WebView2 Runtime…"; Check: NeedsWebView
 Filename: "{app}\MBrowser.exe"; Description: "Открыть MBrowser"; Flags: nowait postinstall skipifsilent unchecked; Check: not IsTestInstall
+[UninstallRun]
+Filename: "{app}\MBrowser.exe"; Parameters: "--unregister-browser"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "UnregisterBrowser"
 [Code]
 function IsTestInstall: Boolean;
 begin

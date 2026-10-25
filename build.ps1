@@ -9,6 +9,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'MBrowser publish failed.' }
     dotnet publish .\Engine\WebKitPreview\MBrowser.WebKit.csproj -c Release -r win-x64 --self-contained true -o .\dist\Features\WebKit --nologo
     if ($LASTEXITCODE -ne 0) { throw 'WebKit helper publish failed.' }
+    dotnet publish .\Engine\ImageOcr\MBrowser.Ocr.csproj -c Release -r win-x64 --self-contained true -o .\dist\Features\ImageOcr --nologo
+    if ($LASTEXITCODE -ne 0) { throw 'OCR helper publish failed.' }
     Copy-Item -LiteralPath .\README.md, .\ENGINE.md -Destination .\dist
     Copy-Item -LiteralPath .\extensions -Destination .\dist\extensions -Recurse
     Copy-Item -LiteralPath .\docs -Destination .\dist\docs -Recurse
