@@ -24,6 +24,7 @@ internal sealed partial class MainForm : BrowserWindow
     private readonly System.Windows.Forms.Timer _idleTimer = new() { Interval = 15000 };
     private readonly System.Windows.Forms.Timer _saveTimer = new() { Interval = 800 };
     private readonly SemaphoreSlim _transition = new(1, 1);
+    private readonly SemaphoreSlim _sessionIoGate = new(1, 1);
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Dictionary<Guid, TabRuntime> _runtimes = [];
     private CoreWebView2Environment? _environment;
@@ -35,17 +36,21 @@ internal sealed partial class MainForm : BrowserWindow
     internal Task ReadyTask => _ready.Task;
     internal BrowserTab ActiveTab => _session.Tabs[_session.SelectedIndex];
     internal int TabCount => _session.Tabs.Count;
-    internal int LiveViewCount => _runtimes.Count;
-    internal bool IsPageLoading => ActiveRuntime?.Loading ?? false;
-    internal bool HasLoadingTabs => _runtimes.Values.Any(runtime => runtime.Loading);
+    internal int LiveViewCount => _cefEngine ? _cefRuntimes.Count : _runtimes.Count;
+    internal bool IsPageLoading => _cefEngine ? (_cefRuntimes.GetValueOrDefault(ActiveTab.Id)?.Loading ?? false) : (ActiveRuntime?.Loading ?? false);
+    internal bool HasLoadingTabs => _cefEngine ? _cefRuntimes.Values.Any(r => r.Loading) : _runtimes.Values.Any(r => r.Loading);
     private TabRuntime? ActiveRuntime => _runtimes.GetValueOrDefault(ActiveTab.Id);
     internal CoreWebView2? ActiveCore => ActiveRuntime?.View.CoreWebView2;
 
-    public MainForm(string dataPath, bool smoke, string[]? initialTargets = null)
+    public MainForm(string dataPath, bool smoke, string[]? initialTargets = null,
+        bool cefEngine = false, bool customCef = false)
     {
+        _cefEngine = cefEngine;
+        _cefCustomLibCef = customCef;
         DataPath = dataPath;
         _smoke = smoke;
         _preferences = BrowserPreferences.Load(dataPath);
+        _cefStartupFeatures = cefEngine ? CefMemoryFeatures.CommandLine(_preferences, customCef) : "";
         ThemeSettings.Load(dataPath);
         _session = SessionStore.Load(Path.Combine(dataPath, "session.json"));
         foreach(string target in (initialTargets ?? []).Take(16))
@@ -57,7 +62,7 @@ internal sealed partial class MainForm : BrowserWindow
             else continue;
             _session.Tabs.Add(tab); _session.SelectedIndex=_session.Tabs.Count-1;
         }
-        Text = "MBrowser";
+        Text = cefEngine ? "MBrowser — Chromium CEF" : "MBrowser — WebView2";
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         Size = new Size(1180, 800);
         MinimumSize = new Size(820, 650);
@@ -71,13 +76,15 @@ internal sealed partial class MainForm : BrowserWindow
         FullScreenChanged += UpdateChromeLayout;
         Palette.Apply(this);
 
-        _tabs.IsTabLoaded = id => _runtimes.TryGetValue(id, out var runtime) && runtime.View.CoreWebView2?.IsSuspended != true;
+        _tabs.IsTabLoaded = id => _cefEngine
+            ? _cefRuntimes.TryGetValue(id, out var cef) && CefIsAlive(cef)
+            : _runtimes.TryGetValue(id, out var runtime) && runtime.View.CoreWebView2?.IsSuspended != true;
         _tabs.TabSelected += index => RunUi(() => SelectTabAsync(index));
         _tabs.TabClosed += index => RunUi(() => CloseTabAsync(index));
         _tabs.NewTab += () => RunUi(() => OpenTabAsync());
         _home.Navigate += input => RunUi(() => NavigateInputAsync(input));
         _idleTimer.Tick += (_, _) => RunUi(() => UnloadIdleTabsAsync(DateTimeOffset.UtcNow));
-        _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); SaveSession(); };
+        _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); RunUi(SaveSessionAsync); };
         Resize += (_, _) => { SetMemoryTargets(); DismissPasswordPopup(); };
         Move += (_, _) => DismissPasswordPopup();
         Deactivate += (_, _) => { _inactiveSinceUtc = DateTimeOffset.UtcNow; DismissPasswordPopup(); ThemeMedia.SetActive(false); };
@@ -114,24 +121,45 @@ internal sealed partial class MainForm : BrowserWindow
         _back.Enabled = ActiveTab.CanGoBack;
         _forward.Enabled = ActiveTab.CanGoForward;
         _reload.Text = IsPageLoading ? "×" : "↻";
-        Text = "MBrowser — " + ActiveTab.Title;
+        Text = (_cefEngine ? "MBrowser [CEF 154] — " : "MBrowser — ") + ActiveTab.Title;
         _saveTimer.Stop();
         _saveTimer.Start();
     }
 
+    private Task SaveSessionAsync()
+    {
+        // Snapshot on UI thread, then do all I/O and lock continuations off the UI thread.
+        byte[] snapshot = SessionStore.Capture(_session);
+        return WriteSessionSnapshotAsync(snapshot);
+    }
+
+    private async Task WriteSessionSnapshotAsync(byte[] snapshot)
+    {
+        await _sessionIoGate.WaitAsync().ConfigureAwait(false);
+        try { await SessionStore.SaveBytesAsync(Path.Combine(DataPath, "session.json"), snapshot).ConfigureAwait(false); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Program.LogError(DataPath, ex); }
+        finally { _sessionIoGate.Release(); }
+    }
+
     private void SaveSession()
     {
+        // Shutdown path must persist the final state before the application exits.
+        _sessionIoGate.Wait();
         try { SessionStore.Save(Path.Combine(DataPath, "session.json"), _session); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             Program.LogError(DataPath, ex);
-            _status.Text = "Не удалось сохранить сессию. Проверьте доступ к папке профиля.";
+            if (!_closing) _status.Text = "Не удалось сохранить сессию. Проверьте доступ к папке профиля.";
         }
+        finally { _sessionIoGate.Release(); }
     }
 
     internal MemorySnapshot ReadMemory()
     {
         var ids = new HashSet<int> { Environment.ProcessId };
+        if (_cefEngine)
+            foreach (int childId in CefProcessMetrics.GetDescendantIds(Environment.ProcessId))
+                ids.Add(childId);
         if (_environment is not null)
         {
             try { foreach (var process in _environment.GetProcessInfos()) ids.Add(process.ProcessId); }

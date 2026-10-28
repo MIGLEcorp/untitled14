@@ -27,6 +27,91 @@ internal static class Program
             return CoreTests.Run();
         }
 
+        // v4.3: embedded Chromium CEF is the primary renderer.
+        // --webview2 restores the previous engine without touching existing user data.
+        // --smoke-test keeps the original WebView2 regression route.
+        bool cefSmoke = args.Length == 1 && args[0] == "--cef-smoke";
+        bool cefMain = cefSmoke || (args.Length == 0 ||
+            (args[0] != "--webview2" && args[0] != "--smoke-test"));
+        if (cefMain)
+        {
+            bool customCef = CefMemoryFeatures.HasVerifiedCustomBuildMarker(AppContext.BaseDirectory);
+            string dataPathCef = cefSmoke
+                ? Path.Combine(Path.GetTempPath(), "MBrowser-cef-smoke-" + Guid.NewGuid().ToString("N"))
+                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "FeatherBrowser");
+            string[] targets = cefSmoke ? ["https://example.com"] :
+                BrowserDocuments.ParseArguments(args.Length > 0 && args[0] == "--cef"
+                    ? args.Skip(1).ToArray() : args);
+            // Use the SAME installation mutex as v4.2.1. Never allow two versions
+            // to write the shared session and preferences concurrently.
+            using var mutexCef = new Mutex(true,
+                cefSmoke ? "Local\\MBrowserCefSmoke-" + Guid.NewGuid() : "Local\\FeatherBrowser",
+                out bool cefFirst);
+            if (!cefFirst)
+            {
+                if (!BrowserActivation.Send(targets))
+                    MessageBox.Show("MBrowser уже открыт. Закройте старую версию перед запуском обновления.", "MBrowser");
+                return 0;
+            }
+            Directory.CreateDirectory(dataPathCef);
+            // WebView2 userdata/profile and legacy passwords remain untouched.
+            string cefRoot = Path.Combine(dataPathCef, "CEFRuntime");
+            Directory.CreateDirectory(cefRoot);
+            string cefCache = Path.Combine(cefRoot, "Default");
+            Directory.CreateDirectory(cefCache);
+            var cefSettings = new CefSharp.WinForms.CefSettings
+            {
+                RootCachePath = cefRoot,
+                CachePath = cefCache
+            };
+            var cefPrefs = BrowserPreferences.Load(dataPathCef);
+            string cefFeatures = CefMemoryFeatures.CommandLine(cefPrefs, customCef);
+            if (cefFeatures.Length > 0)
+                cefSettings.CefCommandLineArgs["enable-features"] = cefFeatures;
+            if (!CefSharp.Cef.Initialize(cefSettings))
+                throw new InvalidOperationException("Chromium CEF failed to initialize.");
+            Application.ThreadException += (_, e) => LogError(dataPathCef, e.Exception);
+            using var cefForm = new MainForm(dataPathCef, cefSmoke, targets,
+                cefEngine: true, customCef: customCef);
+            _ = cefForm.Handle;
+            using var cefActivation = cefSmoke ? null : new BrowserActivation(incoming =>
+            {
+                try
+                {
+                    if (!cefForm.IsDisposed && cefForm.IsHandleCreated)
+                        cefForm.BeginInvoke(() => cefForm.AcceptShellTargets(incoming));
+                }
+                catch (InvalidOperationException) when (cefForm.IsDisposed || !cefForm.IsHandleCreated) { }
+            });
+            if (cefSmoke)
+            {
+                cefForm.Shown += (_, _) =>
+                {
+                    var timer = new System.Windows.Forms.Timer { Interval = 9000 };
+                    timer.Tick += async (_, _) =>
+                    {
+                        timer.Stop();
+                        timer.Dispose();
+                        bool agent = await cefForm.CefMemoryAgentReadyForTestAsync();
+                        var info = cefForm.CefDiagnosticsForTest();
+                        File.WriteAllText(Path.Combine(dataPathCef, "cef-smoke.txt"),
+                            "CEF_WINDOW_SHOWN=" + cefForm.IsHandleCreated +
+                            Environment.NewLine + "ACTIVE_URL=" + cefForm.ActiveTab.CurrentUrl +
+                            Environment.NewLine + "CEF_RENDERER_INITIALIZED=" + info.BrowserInitialized +
+                            Environment.NewLine + "CEF_RENDERER_ADDRESS=" + info.Address +
+                            Environment.NewLine + "CEF_MEMORY_AGENT_LOADED=" + agent +
+                            Environment.NewLine + "CEF_LIVE_VIEWS=" + cefForm.LiveViewCount +
+                            Environment.NewLine + "CEF_GROUP_PROCESSES=" + cefForm.ReadMemory().ProcessCount);
+                        cefForm.Close();
+                    };
+                    timer.Start();
+                };
+            }
+            Application.Run(cefForm);
+            return Environment.ExitCode;
+        }
+
         bool smoke = args.Length==1 && args[0]=="--smoke-test";
         string dataPath = smoke
             ? Path.Combine(Path.GetTempPath(), "MBrowser-smoke-" + Guid.NewGuid().ToString("N"))

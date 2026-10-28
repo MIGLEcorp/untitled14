@@ -35,21 +35,30 @@ internal sealed partial class MainForm
         if (IsInternalMenuVisible) { CloseOverlay(); return; }
         ShowMenuPage("MBrowser", rows =>
         {
+            if (_cefEngine)
+            {
+                rows("Движок: Chromium CEF 154", () => { });
+                rows("Оптимизации памяти CEF  ›", ShowCefMemorySettings);
+                rows("Измерить RAM процессов CEF  ›", ShowCefDiagnostics);
+                rows("Режим WebView2: запустить MBrowser.exe --webview2", () => { });
+            }
             rows("Новая вкладка", () => RunUi(() => OpenTabAsync()));
             rows("Открыть файл…", OpenDocument);
             rows(IsFullScreen ? "Выйти из полного экрана" : "Полный экран", ToggleFullScreen);
             rows("Закладки", ShowBookmarks);
-            rows("Пароли", ShowPasswords);
+            if (!_cefEngine) rows("Пароли", ShowPasswords);
             rows("Импорт данных…", ShowImport);
-            rows("Загрузки", ShowDownloads);
+            if (!_cefEngine) rows("Загрузки", ShowDownloads);
             rows("Оформление  ›", ShowThemeMenu);
-            rows("Браузер по умолчанию…", BrowserRegistration.OpenSettings);
+            if (!_cefEngine) rows("Браузер по умолчанию…", BrowserRegistration.OpenSettings);
             rows("Подсказки DuckDuckGo: " + (_preferences.NetworkSuggestions ? "вкл." : "выкл."), () =>
             { _preferences.NetworkSuggestions = !_preferences.NetworkSuggestions; _preferences.Save(DataPath); });
-            rows("Заморозить фоновые вкладки", () => RunUi(UnloadBackgroundTabsAsync));
-            rows("Разрешения сайтов  ›", ShowPermissionSettings);
-            rows("Расширения  ›", () => RunUi(ShowExtensionsAsync));
-            rows("Переводчик  ›", ShowTranslatorMenu);
+            if (!_cefEngine) rows("Память и GPU  ›", ShowResourceSettings);
+            if (!_cefEngine) rows("Диагностика RAM / VRAM  ›", ShowResourceDiagnostics);
+            if (!_cefEngine) rows("Заморозить фоновые вкладки", () => RunUi(UnloadBackgroundTabsAsync));
+            if (!_cefEngine) rows("Разрешения сайтов  ›", ShowPermissionSettings);
+            if (!_cefEngine) rows("Расширения  ›", () => RunUi(ShowExtensionsAsync));
+            if (!_cefEngine) rows("Переводчик  ›", ShowTranslatorMenu);
             rows("Открыть в WebKit", () => RunUi(() => Engine.WebKitPreviewLauncher.LaunchAsync(this, ActiveTab.CurrentUrl, DataPath)));
             rows("Выход", Close);
         });

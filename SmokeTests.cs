@@ -103,6 +103,36 @@ internal static class SmokeTests
                 await TranslatorTests.RunAsync(form,dataPath,translatorArchive,Check);
             await form.HomeAsync();
             Check(form.LiveViewCount==0,"Explicitly leaving a site releases its view");
+
+            // End-to-end SSD-backed tab hibernation, restoration and dirty form protection.
+            await form.NavigateInputAsync(one);
+            await WaitForPageAsync(form,one,"MBrowser smoke one");
+            var beforeHibernation = form.ActiveCore!;
+            await beforeHibernation.ExecuteScriptAsync("window.scrollTo(0,800)");
+            int hibernationsBefore = form.HibernationCountForTest;
+            await form.OpenTabAsync();
+            await Task.Delay(150);
+            await form.HibernateBackgroundForTestAsync();
+            Check(form.LiveViewCount==0 && form.HibernationCountForTest==hibernationsBefore+1,
+                "Clean idle page disposed instead of only suspending");
+            await form.SelectTabAsync(0);
+            await WaitForPageAsync(form,one,"MBrowser smoke one");
+            Check(form.ActiveCore != beforeHibernation && form.RestorationCountForTest>0,
+                "Disposed WebView2 was recreated and tracked");
+            Check(await form.ActiveCore!.ExecuteScriptAsync("window.scrollY") == "800",
+                "Restoration did not recover the saved scroll position");
+
+            var edited = form.ActiveCore!;
+            await edited.ExecuteScriptAsync("let field=document.createElement('input');document.body.appendChild(field);field.value='draft';field.dispatchEvent(new Event('input',{bubbles:true}))");
+            await form.SelectTabAsync(1);
+            await form.HibernateBackgroundForTestAsync();
+            Check(form.LiveViewCount==1, "Edited input unexpectedly destroyed by hibernation");
+            await form.SelectTabAsync(0);
+            Check(form.ActiveCore==edited && await edited.ExecuteScriptAsync("document.querySelector('input').value")=="\"draft\"",
+                "Dirty form lost on switching back");
+            await form.CloseTabAsync(1);
+            await form.HomeAsync();
+            Check(form.LiveViewCount==0,"Finishing hibernation test releases WebView2");
             Check(!File.Exists(Path.Combine(dataPath,"errors.log")),"No unhandled UI errors were logged");
             Environment.ExitCode=0;
         }

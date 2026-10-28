@@ -188,6 +188,33 @@ public static class SessionStore
         }
     }
 
+    public static byte[] Capture(AppSession session) => JsonSerializer.SerializeToUtf8Bytes(Normalize(session), JsonOptions);
+
+    public static Task SaveAsync(string path, AppSession session) => SaveBytesAsync(path, Capture(session));
+
+    public static async Task SaveBytesAsync(string path, byte[] payload)
+    {
+        var fullPath = Path.GetFullPath(path);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        var tempPath = fullPath + ".tmp";
+        try
+        {
+            await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write,
+                FileShare.None, 65536, FileOptions.Asynchronous))
+            {
+                await stream.WriteAsync(payload).ConfigureAwait(false);
+                await stream.FlushAsync().ConfigureAwait(false);
+            }
+            File.Move(tempPath, fullPath, overwrite: true);
+        }
+        finally
+        {
+            try { File.Delete(tempPath); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
     public static void Save(string path, AppSession session)
     {
         var fullPath = Path.GetFullPath(path);

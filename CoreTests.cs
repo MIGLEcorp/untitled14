@@ -147,6 +147,43 @@ public static class CoreTests
                 Assert(!TabFreezePolicy.ShouldFreeze(false, false, now.AddHours(-1), now.AddMinutes(-1), now, timeout), "Recent network activity ignored");
             });
 
+            Check("Adaptive eviction policy and GPU flags", () =>
+            {
+                var now = DateTimeOffset.UtcNow;
+                const long plentyOfRam = 16L * 1024 * 1024 * 1024;
+                Assert(!AdaptiveResourceManager.ShouldHibernate(MemoryMode.Performance, now.AddHours(-24), now, 99, 1, 5),
+                    "Performance mode evicted an inactive tab");
+                Assert(!AdaptiveResourceManager.ShouldHibernate(MemoryMode.Balanced, now.AddSeconds(-15), now, 99, 1, 5),
+                    "Hysteresis ignored for a recently switched tab");
+                Assert(AdaptiveResourceManager.ShouldHibernate(MemoryMode.Extreme, now.AddMinutes(-3), now, 3, plentyOfRam, 5),
+                    "Extreme mode failed to evict old tab");
+                Assert(AdaptiveResourceManager.ShouldHibernate(MemoryMode.LowMemory, now.AddMinutes(-2), now, 3, 100_000_000, 5),
+                    "Low-memory emergency evictions ignored");
+                Assert(GraphicsOptimizationManager.BrowserArguments(true, false) == "", "Default GPU acceleration was disabled");
+                Assert(GraphicsOptimizationManager.BrowserArguments(false, false).Contains("--disable-gpu"),
+                    "GPU toggle did not disable hardware rendering");
+                Assert(!GraphicsOptimizationManager.BrowserArguments(false, false).Contains("--no-sandbox"),
+                    "Browser sandbox unexpectedly disabled");
+            });
+
+            Check("Asynchronous atomic session storage and native DXGI fallback", () =>
+            {
+                var path = Path.Combine(folder, "async-session.json");
+                var data = new AppSession();
+                data.Tabs[0].Visit("https://example.com/ssd");
+                data.Tabs[0].ScrollY = 700;
+                SessionStore.SaveAsync(path, data).GetAwaiter().GetResult();
+                var restored = SessionStore.Load(path);
+                Assert(restored.Tabs[0].CurrentUrl == "https://example.com/ssd" && restored.Tabs[0].ScrollY == 700,
+                    "Async session storage lost metadata");
+                Assert(!File.Exists(path + ".tmp"), "Incomplete atomic temp file was kept");
+                var gpu = NativeGpuDiagnostics.Read(); // Optional hardware capability: never crash if DXGI unavailable.
+                if (gpu is { } info) Assert(info.Budget > 0, "Native DXGI reported an invalid VRAM budget");
+                Console.WriteLine(gpu is { } v ? $"DXGI calling process: {v.Used / 1048576} MiB used, {v.Budget / 1048576} MiB budget" : "DXGI VRAM: unavailable");
+                var systemGpu = NativeGpuDiagnostics.SystemDedicatedUsage();
+                Console.WriteLine(systemGpu is { } dedicated ? $"PDH dedicated VRAM across adapters: {dedicated / 1048576} MiB" : "PDH GPU Adapter Memory: unavailable");
+            });
+
             Check("Preferences and themes persist and recover invalid settings", () =>
             {
                 var settingsPath = Path.Combine(folder, "preferences");
@@ -154,8 +191,13 @@ public static class CoreTests
                 var settings = BrowserPreferences.Load(settingsPath);
                 Assert(settings.UnloadAfterMinutes == 5, "Wrong default timeout");
                 settings.UnloadAfterMinutes = 15;
+                settings.MemoryMode = MemoryMode.Extreme;
+                settings.HardwareAcceleration = false;
+                settings.NeverHibernateHosts.Add("example.org");
                 settings.Save(settingsPath);
-                Assert(BrowserPreferences.Load(settingsPath).UnloadAfterMinutes == 15, "Settings lost");
+                var changed = BrowserPreferences.Load(settingsPath);
+                Assert(changed.UnloadAfterMinutes == 15 && changed.MemoryMode == MemoryMode.Extreme &&
+                    !changed.HardwareAcceleration && changed.NeverHibernateHosts.Contains("example.org"), "Settings lost");
                 File.WriteAllText(Path.Combine(settingsPath, "preferences.json"), "{\"UnloadAfterMinutes\":-1,\"MaximumResidentTabs\":900}");
                 settings = BrowserPreferences.Load(settingsPath);
                 Assert(settings.UnloadAfterMinutes == 1, "Settings bounds");

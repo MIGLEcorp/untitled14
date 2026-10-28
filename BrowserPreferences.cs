@@ -6,6 +6,23 @@ namespace MBrowser;
 internal sealed class BrowserPreferences
 {
     public int UnloadAfterMinutes { get; set; } = 5;
+    public MemoryMode MemoryMode { get; set; } = MemoryMode.Balanced;
+    public bool HardwareAcceleration { get; set; } = true;
+    public bool AutomaticHibernate { get; set; } = true;
+    // Opt-in active-page/CEF memory features. All default to disabled.
+    public bool LazyOffscreenImages { get; set; }
+    public bool DeferOffscreenVideo { get; set; }
+    public bool ActivePageLowMemoryTarget { get; set; }
+    public bool AdaptiveLowMemoryOnSystemPressure { get; set; }
+    public int SystemRamPressureThresholdMiB { get; set; } = 2048;
+    public bool CollectJavaScriptGarbageWhenIdle { get; set; }
+    public bool ExperimentalContentVisibility { get; set; }
+    public bool NativeCompactDecodedImageCache { get; set; }
+    public bool NativeSmallerRasterArea { get; set; }
+    public bool NativeReclaimTilesWhenIdle { get; set; }
+    public bool NativeReclaimOldPrepaintTiles { get; set; }
+    public List<string> NeverOptimizeHosts { get; set; } = [];
+    public List<string> NeverHibernateHosts { get; set; } = [];
     public bool NetworkSuggestions { get; set; } = true;
     public string ImageOcrLanguage { get; set; } = "en-US";
     public string ImageTargetLanguage { get; set; } = "ru";
@@ -19,6 +36,14 @@ internal sealed class BrowserPreferences
             if (!File.Exists(path)) return new();
             var settings = JsonSerializer.Deserialize<BrowserPreferences>(File.ReadAllText(path)) ?? new();
             settings.UnloadAfterMinutes = Math.Clamp(settings.UnloadAfterMinutes, 1, 120);
+            settings.SystemRamPressureThresholdMiB = Math.Clamp(settings.SystemRamPressureThresholdMiB, 512, 8192);
+            settings.NeverOptimizeHosts = (settings.NeverOptimizeHosts ?? [])
+                .Where(host => host is { Length: > 0 and <= 253 } && Uri.CheckHostName(host) != UriHostNameType.Unknown)
+                .Select(host => host.ToLowerInvariant()).Distinct(StringComparer.OrdinalIgnoreCase).Take(128).ToList();
+            if (!Enum.IsDefined(settings.MemoryMode)) settings.MemoryMode = MemoryMode.Balanced;
+            settings.NeverHibernateHosts = (settings.NeverHibernateHosts ?? [])
+                .Where(host => host is { Length: > 0 and <= 253 } && Uri.CheckHostName(host) != UriHostNameType.Unknown)
+                .Select(host => host.ToLowerInvariant()).Distinct(StringComparer.OrdinalIgnoreCase).Take(128).ToList();
             if (settings.ImageOcrLanguage is null || settings.ImageOcrLanguage.Length > 30) settings.ImageOcrLanguage = "";
             if (settings.ImageTargetLanguage is not ("ru" or "en" or "ja" or "de" or "fr" or "es" or "zh-CN")) settings.ImageTargetLanguage = "ru";
             if (settings.Wallpaper is not ("rain-city.jpg" or "save-point.jpg")) settings.Wallpaper = "rain-city.jpg";

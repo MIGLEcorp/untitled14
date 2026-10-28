@@ -1,10 +1,11 @@
-#define AppVersion "4.2.1"
+#define AppVersion "4.3.0"
 [Setup]
 AppId={{B4E6167D-3A9C-41E6-A0A2-9176BEDDAC12}
 AppName=MBrowser
 MinVersion=10.0.19041
 AppMutex={code:GetAppMutex}
 AppVersion={#AppVersion}
+AppVerName=MBrowser 4.3.0 beta 1 (Chromium CEF)
 AppPublisher=MIGLEcorp
 AppPublisherURL=https://github.com/MIGLEcorp/untitled14
 DefaultDirName={localappdata}\Programs\MBrowser
@@ -14,7 +15,7 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\artifacts
-OutputBaseFilename=MBrowser-{#AppVersion}-Setup-x64
+OutputBaseFilename=MBrowser-{#AppVersion}-beta.1-Setup-x64
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

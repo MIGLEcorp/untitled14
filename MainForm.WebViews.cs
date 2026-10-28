@@ -22,6 +22,7 @@ internal sealed partial class MainForm
         internal int NativeIndex { get; set; } = -1;
         internal Dictionary<int, int> NativeEntries { get; } = [];
         internal long HistoryRevision { get; set; }
+        internal DateTimeOffset? RestoreStartedUtc { get; set; }
     }
 
     private bool IsAlive(TabRuntime runtime) => !_closing &&
@@ -32,6 +33,7 @@ internal sealed partial class MainForm
         var view = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Palette.Background,
             AccessibleName = "Содержимое страницы" };
         var runtime = new TabRuntime(tab, view);
+        if (_hibernatedIds.Remove(tab.Id)) runtime.RestoreStartedUtc = DateTimeOffset.UtcNow;
         _runtimes.Add(tab.Id, runtime);
         _viewport.Controls.Add(view);
         view.BringToFront();
@@ -44,6 +46,7 @@ internal sealed partial class MainForm
             await view.EnsureCoreWebView2Async(_environment);
             if (!IsAlive(runtime)) return runtime;
             ConfigureView(runtime);
+            await view.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(TabHibernationManager.ActivityTrackerScript);
             try { await EnsureTranslatorAsync(view.CoreWebView2); }
             catch(Exception ex) { Program.LogError(DataPath,ex); _status.Text="Переводчик не подключён: " + ex.Message; }
             await ConfigureActivityTrackingAsync(runtime);
@@ -118,6 +121,12 @@ internal sealed partial class MainForm
         {
             if (!IsAlive(runtime) || e.NavigationId != runtime.NavigationId) return;
             runtime.Loading = false;
+            if (runtime.RestoreStartedUtc is { } restoreStart)
+            {
+                _restoreCount++;
+                _restoreTotalMilliseconds += (DateTimeOffset.UtcNow - restoreStart).TotalMilliseconds;
+                runtime.RestoreStartedUtc = null;
+            }
             if (tab == ActiveTab)
                 _status.Text = e.IsSuccess ? "Готово" : $"Страница не загружена: {e.WebErrorStatus}. Нажмите ↻ для повтора.";
             try
@@ -247,7 +256,8 @@ internal sealed partial class MainForm
             try
             {
                 if (runtime.View.CoreWebView2 is { } core)
-                    core.MemoryUsageTargetLevel = runtime.Tab != ActiveTab || WindowState == FormWindowState.Minimized
+                    core.MemoryUsageTargetLevel = WindowState == FormWindowState.Minimized ||
+                        (_preferences.MemoryMode != MemoryMode.Performance && runtime.Tab != ActiveTab)
                         ? CoreWebView2MemoryUsageTargetLevel.Low : CoreWebView2MemoryUsageTargetLevel.Normal;
             }
             catch (Exception ex) when (ex is NotImplementedException or COMException or InvalidOperationException) { }

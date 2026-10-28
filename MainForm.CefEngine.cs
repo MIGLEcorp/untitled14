@@ -1,0 +1,294 @@
+using CefSharp;
+using CefSharp.WinForms;
+
+namespace MBrowser;
+
+/// <summary>
+/// Embedded CEF rendering within the MBrowser shell. This uses the independently
+/// distributed CEF runtime. The custom Chromium 158 build is NOT interchangeable
+/// with CEF 154's libcef.dll; native Chromium flags need a matching custom CEF build.
+/// </summary>
+internal sealed partial class MainForm
+{
+    private sealed class CefTabRuntime(BrowserTab tab, ChromiumWebBrowser view)
+    {
+        internal BrowserTab Tab { get; } = tab;
+        internal ChromiumWebBrowser View { get; } = view;
+        internal bool Loading { get; set; }
+        internal string MemoryAgentScript { get; set; } = "";
+        internal DateTimeOffset LastUsedUtc { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    private readonly Dictionary<Guid, CefTabRuntime> _cefRuntimes = [];
+    private bool _cefEngine;
+    private bool _cefCustomLibCef;
+
+    private bool CefIsAlive(CefTabRuntime r) =>
+        !_closing && !r.View.IsDisposed && _cefRuntimes.GetValueOrDefault(r.Tab.Id) == r;
+
+    private CefTabRuntime CreateCefView(BrowserTab tab)
+    {
+        // Initialization is performed on the main UI thread in Program.Main.
+        var browser = new ChromiumWebBrowser(tab.CurrentUrl ?? "about:blank")
+        {
+            Dock = DockStyle.Fill,
+            AccessibleName = "Chromium Embedded Framework page"
+        };
+        var runtime = new CefTabRuntime(tab, browser)
+        {
+            Loading = true,
+            MemoryAgentScript = ActivePageMemoryController.Script(_preferences)
+        };
+        _cefRuntimes.Add(tab.Id, runtime);
+        _viewport.Controls.Add(browser);
+        browser.BringToFront();
+
+        void OnUi(Action update)
+        {
+            try
+            {
+                if (!IsHandleCreated || IsDisposed) return;
+                BeginInvoke(() => { if (CefIsAlive(runtime)) update(); });
+            }
+            catch (InvalidOperationException) { }
+        }
+
+        browser.LoadingStateChanged += (_, e) => OnUi(() =>
+        {
+            runtime.Loading = e.IsLoading;
+            if (tab == ActiveTab)
+            {
+                _status.Text = e.IsLoading ? "CEF: загрузка..." : "CEF: готово";
+                RefreshChrome();
+            }
+        });
+        browser.AddressChanged += (_, e) => OnUi(() =>
+        {
+            if (!string.Equals(e.Address, "about:blank", StringComparison.OrdinalIgnoreCase) &&
+                AddressParser.TryWebUrl(e.Address, out string resolved))
+            {
+                if (tab.CurrentUrl != resolved) tab.Visit(resolved);
+            }
+            if (tab == ActiveTab) RefreshChrome();
+            else _tabs.Invalidate();
+        });
+        browser.TitleChanged += (_, e) => OnUi(() =>
+        {
+            if (!string.IsNullOrWhiteSpace(e.Title))
+                tab.Title = e.Title[..Math.Min(300, e.Title.Length)];
+            if (tab == ActiveTab) RefreshChrome();
+            else _tabs.Invalidate();
+        });
+        browser.FrameLoadStart += (_, e) =>
+        {
+            if (!e.Frame.IsMain) return;
+            try { e.Frame.ExecuteJavaScriptAsync(runtime.MemoryAgentScript); }
+            catch (ObjectDisposedException) { }
+        };
+        browser.LoadError += (_, e) =>
+        {
+            if (e.ErrorCode == CefErrorCode.Aborted) return;
+            OnUi(() => { if (tab == ActiveTab) _status.Text = "CEF: " + e.ErrorText; });
+        };
+        browser.KeyDown += (_, e) =>
+        {
+            if (HandleShortcut(e.KeyData)) e.Handled = e.SuppressKeyPress = true;
+        };
+        return runtime;
+    }
+
+    private Task ShowCefActiveTabAsync()
+    {
+        CloseOverlay();
+        DismissPasswordPopup();
+        foreach (var runtime in _cefRuntimes.Values)
+        {
+            if (runtime.Tab != ActiveTab && runtime.View.Visible)
+            {
+                runtime.LastUsedUtc = DateTimeOffset.UtcNow;
+                runtime.View.Visible = false;
+            }
+        }
+        bool home = ActiveTab.CurrentUrl is null or "about:blank";
+        _home.Visible = home;
+        if (!home) ThemeMedia.Release(ThemeArea.Home);
+        UpdateChromeLayout();
+        if (home)
+        {
+            ActiveTab.Title = "Новая вкладка";
+            _home.BringToFront();
+            _status.Text = "CEF: новая вкладка";
+        }
+        else
+        {
+            if (!_cefRuntimes.TryGetValue(ActiveTab.Id, out var runtime))
+                runtime = CreateCefView(ActiveTab);
+            if (!CefIsAlive(runtime)) return Task.CompletedTask;
+            runtime.LastUsedUtc = DateTimeOffset.UtcNow;
+            runtime.View.Visible = true;
+            runtime.View.BringToFront();
+            runtime.View.Focus();
+            _status.Text = runtime.Loading ? "CEF: загрузка..." : "CEF: готово";
+        }
+        RefreshChrome();
+        UpdateMemory();
+        return Task.CompletedTask;
+    }
+
+    private bool DestroyCefView(Guid id)
+    {
+        if (!_cefRuntimes.Remove(id, out var runtime)) return false;
+        _viewport.Controls.Remove(runtime.View);
+        runtime.View.Dispose();
+        return true;
+    }
+
+    private void DestroyAllCefViews()
+    {
+        foreach (var id in _cefRuntimes.Keys.ToArray()) DestroyCefView(id);
+    }
+
+    internal (bool BrowserInitialized, string Address, int LiveTabs) CefDiagnosticsForTest()
+    {
+        if (!_cefEngine || !_cefRuntimes.TryGetValue(ActiveTab.Id, out var runtime))
+            return (false, "", 0);
+        return (runtime.View.IsBrowserInitialized, runtime.View.Address ?? "",
+            _cefRuntimes.Count);
+    }
+
+    internal async Task<bool> CefMemoryAgentReadyForTestAsync()
+    {
+        if (!_cefEngine || !_cefRuntimes.TryGetValue(ActiveTab.Id, out var runtime) ||
+            !CefIsAlive(runtime) || !runtime.View.IsBrowserInitialized)
+            return false;
+        try
+        {
+            var response = await runtime.View.EvaluateScriptAsync(
+                "typeof globalThis.__mbrowser_memory_lab_agent_v1?.configure === 'function'");
+            return response.Success && response.Result is true;
+        }
+        catch (ObjectDisposedException) { return false; }
+    }
+
+    private bool TryCefNavigate(string url)
+    {
+        if (!_cefEngine || !_cefRuntimes.TryGetValue(ActiveTab.Id, out var runtime) ||
+            !CefIsAlive(runtime)) return false;
+        runtime.View.LoadUrl(url);
+        return true;
+    }
+
+    private bool TryCefReload()
+    {
+        if (!_cefRuntimes.TryGetValue(ActiveTab.Id, out var runtime) || !CefIsAlive(runtime))
+            return false;
+        if (runtime.Loading) runtime.View.Stop();
+        else runtime.View.Reload();
+        RefreshChrome();
+        return true;
+    }
+
+    private bool TryCefBack()
+    {
+        if (!_cefRuntimes.TryGetValue(ActiveTab.Id, out var runtime) ||
+            !CefIsAlive(runtime) || !runtime.View.CanGoBack) return false;
+        runtime.View.Back();
+        return true;
+    }
+
+    private bool TryCefForward()
+    {
+        if (!_cefRuntimes.TryGetValue(ActiveTab.Id, out var runtime) ||
+            !CefIsAlive(runtime) || !runtime.View.CanGoForward) return false;
+        runtime.View.Forward();
+        return true;
+    }
+
+    private void ApplyCefActivePageSettings()
+    {
+        string script = ActivePageMemoryController.Script(_preferences);
+        foreach (var runtime in _cefRuntimes.Values)
+        {
+            if (!CefIsAlive(runtime)) continue;
+            runtime.MemoryAgentScript = script;
+            if (runtime.View.IsBrowserInitialized)
+            {
+                try { runtime.View.ExecuteScriptAsync(script); }
+                catch (ObjectDisposedException) { }
+            }
+        }
+    }
+
+    private void ShowCefMemorySettings()
+    {
+        if (!_cefEngine) return;
+        ShowMenuPage("CEF 154 — экономия RAM", rows =>
+        {
+            rows("Изменения требуют закрыть и заново открыть режим CEF", () => { });
+            rows("Меньше предварительных тайлов: " +
+                (_preferences.NativeSmallerRasterArea ? "ВКЛ" : "ВЫКЛ"), () =>
+            {
+                _preferences.NativeSmallerRasterArea = !_preferences.NativeSmallerRasterArea;
+                _preferences.Save(DataPath);
+                ShowCefMemorySettings();
+            });
+            rows("Очищать тайлы в простое: " +
+                (_preferences.NativeReclaimTilesWhenIdle ? "ВКЛ" : "ВЫКЛ"), () =>
+            {
+                _preferences.NativeReclaimTilesWhenIdle = !_preferences.NativeReclaimTilesWhenIdle;
+                _preferences.Save(DataPath);
+                ShowCefMemorySettings();
+            });
+            rows("Освобождать старые тайлы: " +
+                (_preferences.NativeReclaimOldPrepaintTiles ? "ВКЛ" : "ВЫКЛ"), () =>
+            {
+                _preferences.NativeReclaimOldPrepaintTiles = !_preferences.NativeReclaimOldPrepaintTiles;
+                _preferences.Save(DataPath);
+                ShowCefMemorySettings();
+            });
+            rows("— Вкладка: изменения применяются сразу —", () => { });
+            rows("Отложенная загрузка изображений: " +
+                (_preferences.LazyOffscreenImages ? "ВКЛ" : "ВЫКЛ"), () =>
+            {
+                _preferences.LazyOffscreenImages = !_preferences.LazyOffscreenImages;
+                _preferences.Save(DataPath);
+                ApplyCefActivePageSettings();
+                ShowCefMemorySettings();
+            });
+            rows("Отложенная загрузка невидимого видео: " +
+                (_preferences.DeferOffscreenVideo ? "ВКЛ" : "ВЫКЛ"), () =>
+            {
+                _preferences.DeferOffscreenVideo = !_preferences.DeferOffscreenVideo;
+                _preferences.Save(DataPath);
+                ApplyCefActivePageSettings();
+                ShowCefMemorySettings();
+            });
+            rows("ЭКСПЕРИМЕНТ: content-visibility: " +
+                (_preferences.ExperimentalContentVisibility ? "ВКЛ" : "ВЫКЛ"), () =>
+            {
+                _preferences.ExperimentalContentVisibility = !_preferences.ExperimentalContentVisibility;
+                _preferences.Save(DataPath);
+                ApplyCefActivePageSettings();
+                ShowCefMemorySettings();
+            });
+            if (_cefCustomLibCef)
+                rows("Компактный кэш изображений: " +
+                    (_preferences.NativeCompactDecodedImageCache ? "ВКЛ" : "ВЫКЛ"), () =>
+                {
+                    _preferences.NativeCompactDecodedImageCache = !_preferences.NativeCompactDecodedImageCache;
+                    _preferences.Save(DataPath);
+                    ShowCefMemorySettings();
+                });
+            else
+                rows("Компактный кэш изображений: нужен свой libcef (ещё нет)", () => { });
+            rows("Запрошенные флаги: " + CefMemoryFeatures.CommandLine(_preferences, _cefCustomLibCef), () => { });
+            rows("Применить: закрой CEF и запусти Start-Cef-MBrowser.cmd", () => { });
+        });
+    }
+
+    private void UpdateCefTabVisibility()
+    {
+        if (!_cefEngine) return;
+        _tabs.IsTabLoaded = id => _cefRuntimes.TryGetValue(id, out var r) && CefIsAlive(r);
+    }
+}

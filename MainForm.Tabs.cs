@@ -17,6 +17,11 @@ internal sealed partial class MainForm
             await LeaveSiteFullscreenAsync();
             ActiveTab.Visit(url);
             ActiveTab.ScrollX = ActiveTab.ScrollY = 0;
+            if (_cefEngine && TryCefNavigate(url))
+            {
+                RefreshChrome();
+                return;
+            }
             DestroyView(ActiveTab.Id);
             await ShowActiveTabAsync();
         });
@@ -69,6 +74,12 @@ internal sealed partial class MainForm
     internal Task GoBackAsync() => TransitionAsync(async () =>
     {
         if (!ActiveTab.CanGoBack) return;
+        if (_cefEngine && TryCefBack())
+        {
+            ActiveTab.Back();
+            RefreshChrome();
+            return;
+        }
         await LeaveSiteFullscreenAsync();
         ActiveTab.Back();
         DestroyView(ActiveTab.Id);
@@ -79,6 +90,12 @@ internal sealed partial class MainForm
     internal Task GoForwardAsync() => TransitionAsync(async () =>
     {
         if (!ActiveTab.CanGoForward) return;
+        if (_cefEngine && TryCefForward())
+        {
+            ActiveTab.Forward();
+            RefreshChrome();
+            return;
+        }
         await LeaveSiteFullscreenAsync();
         ActiveTab.Forward();
         DestroyView(ActiveTab.Id);
@@ -88,6 +105,11 @@ internal sealed partial class MainForm
 
     private Task ReloadAsync() => TransitionAsync(async () =>
     {
+        if (_cefEngine)
+        {
+            if (!TryCefReload()) await ShowActiveTabAsync();
+            return;
+        }
         if (ActiveCore is { } core)
         {
             if (IsPageLoading) { core.Stop(); ActiveRuntime!.Loading = false; }
@@ -100,6 +122,7 @@ internal sealed partial class MainForm
     /// <summary>Switching a tab keeps its live page intact. Only idle eviction disposes its control.</summary>
     private async Task ShowActiveTabAsync()
     {
+        if (_cefEngine) { await ShowCefActiveTabAsync(); return; }
         CloseOverlay();
         DismissPasswordPopup();
         _address.Text = ActiveTab.CurrentUrl is null or "about:blank" ? "" : ActiveTab.CurrentUrl;
@@ -138,8 +161,17 @@ internal sealed partial class MainForm
         UpdateMemory();
     }
 
-    // Retained names keep command bindings stable; these operations now suspend, never discard.
-    internal Task UnloadIdleTabsAsync(DateTimeOffset now) => FreezeIdleTabsAsync(now);
+    // Keep command bindings stable; automatic policy may suspend or hibernate inactive views.
+    internal Task UnloadIdleTabsAsync(DateTimeOffset now) => TransitionAsync(async () =>
+    {
+        await HibernateIdleBackgroundTabsAsync(now);
+        if (_preferences.MemoryMode != MemoryMode.Performance &&
+            TabFreezePolicy.ShouldFreeze(IsBrowserForeground, _runtimes.Values.Any(HasProtectedActivity),
+            _inactiveSinceUtc, _lastNetworkActivityUtc, now, TimeSpan.FromMinutes(_preferences.UnloadAfterMinutes)))
+        {
+            foreach (var runtime in _runtimes.Values.ToArray()) await FreezeRuntimeAsync(runtime);
+        }
+    });
     internal Task UnloadBackgroundTabsAsync() => TransitionAsync(async () =>
     {
         foreach (var runtime in _runtimes.Values.Where(r => r.Tab != ActiveTab).ToArray())
@@ -153,6 +185,7 @@ internal sealed partial class MainForm
     }
     private void DestroyView(Guid id)
     {
+        if (_cefEngine) { DestroyCefView(id); return; }
         if (!_runtimes.Remove(id, out var runtime)) return;
         if (runtime.Tab == ActiveTab) DismissPasswordPopup();
         if (runtime.Tab == ActiveTab && _siteEnteredFullscreen)
@@ -166,6 +199,7 @@ internal sealed partial class MainForm
 
     private void DestroyAllViews()
     {
+        DestroyAllCefViews();
         foreach (var id in _runtimes.Keys.ToArray()) DestroyView(id);
     }
 }
