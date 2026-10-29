@@ -40,7 +40,8 @@ internal static class Program
                 ? Path.Combine(Path.GetTempPath(), "MBrowser-cef-smoke-" + Guid.NewGuid().ToString("N"))
                 : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "FeatherBrowser");
-            string[] targets = cefSmoke ? ["https://example.com"] :
+            using var cefSmokeServer = cefSmoke ? new CefSmokeServer() : null;
+            string[] targets = cefSmoke ? [cefSmokeServer!.Url] :
                 BrowserDocuments.ParseArguments(args.Length > 0 && args[0] == "--cef"
                     ? args.Skip(1).ToArray() : args);
             // Use the SAME installation mutex as v4.2.1. Never allow two versions
@@ -93,17 +94,26 @@ internal static class Program
                     {
                         timer.Stop();
                         timer.Dispose();
-                        bool agent = await cefForm.CefMemoryAgentReadyForTestAsync();
-                        var info = cefForm.CefDiagnosticsForTest();
-                        File.WriteAllText(Path.Combine(dataPathCef, "cef-smoke.txt"),
-                            "CEF_WINDOW_SHOWN=" + cefForm.IsHandleCreated +
-                            Environment.NewLine + "ACTIVE_URL=" + cefForm.ActiveTab.CurrentUrl +
-                            Environment.NewLine + "CEF_RENDERER_INITIALIZED=" + info.BrowserInitialized +
-                            Environment.NewLine + "CEF_RENDERER_ADDRESS=" + info.Address +
-                            Environment.NewLine + "CEF_MEMORY_AGENT_LOADED=" + agent +
-                            Environment.NewLine + "CEF_LIVE_VIEWS=" + cefForm.LiveViewCount +
-                            Environment.NewLine + "CEF_GROUP_PROCESSES=" + cefForm.ReadMemory().ProcessCount);
-                        cefForm.Close();
+                        try
+                        {
+                            bool agent = await cefForm.CefMemoryAgentReadyForTestAsync();
+                            var info = cefForm.CefDiagnosticsForTest();
+                            File.WriteAllText(Path.Combine(dataPathCef, "cef-smoke.txt"),
+                                "CEF_WINDOW_SHOWN=" + cefForm.IsHandleCreated +
+                                Environment.NewLine + "ACTIVE_URL=" + cefForm.ActiveTab.CurrentUrl +
+                                Environment.NewLine + "CEF_RENDERER_INITIALIZED=" + info.BrowserInitialized +
+                                Environment.NewLine + "CEF_RENDERER_ADDRESS=" + info.Address +
+                                Environment.NewLine + "CEF_MEMORY_AGENT_LOADED=" + agent +
+                                Environment.NewLine + "CEF_LIVE_VIEWS=" + cefForm.LiveViewCount +
+                                Environment.NewLine + "CEF_GROUP_PROCESSES=" + cefForm.ReadMemory().ProcessCount);
+                            if (!info.BrowserInitialized || !agent) Environment.ExitCode = 1;
+                        }
+                        catch (Exception ex)
+                        {
+                            LogError(dataPathCef, ex);
+                            Environment.ExitCode = 1;
+                        }
+                        finally { cefForm.Close(); }
                     };
                     timer.Start();
                 };

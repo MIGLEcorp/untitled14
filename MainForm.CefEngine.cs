@@ -4,9 +4,9 @@ using CefSharp.WinForms;
 namespace MBrowser;
 
 /// <summary>
-/// Embedded CEF rendering within the MBrowser shell. This uses the independently
-/// distributed CEF runtime. The custom Chromium 158 build is NOT interchangeable
-/// with CEF 154's libcef.dll; native Chromium flags need a matching custom CEF build.
+/// Embedded CEF 154 rendering within the MBrowser shell. The custom native
+/// libcef.dll must always ship with the matching CEF resources, locales and
+/// V8 snapshot from the same build; mixing stock and custom runtimes is unsafe.
 /// </summary>
 internal sealed partial class MainForm
 {
@@ -56,6 +56,16 @@ internal sealed partial class MainForm
         browser.LoadingStateChanged += (_, e) => OnUi(() =>
         {
             runtime.Loading = e.IsLoading;
+            // Reapply page policies once the main-frame V8 context is ready.
+            // Native CEF builds can deliver FrameLoadEnd before the final
+            // renderer context is able to execute injected JavaScript.
+            if (!e.IsLoading && runtime.View.IsBrowserInitialized &&
+                runtime.View.CanExecuteJavascriptInMainFrame)
+            {
+                try { runtime.View.ExecuteScriptAsync(runtime.MemoryAgentScript); }
+                catch (ObjectDisposedException) { }
+                catch (InvalidOperationException) { }
+            }
             if (tab == ActiveTab)
             {
                 _status.Text = e.IsLoading ? "CEF: загрузка..." : "CEF: готово";
@@ -80,6 +90,13 @@ internal sealed partial class MainForm
             else _tabs.Invalidate();
         });
         browser.FrameLoadStart += (_, e) =>
+        {
+            if (!e.Frame.IsMain) return;
+            try { e.Frame.ExecuteJavaScriptAsync(runtime.MemoryAgentScript); }
+            catch (ObjectDisposedException) { }
+        };
+        // FrameLoadStart can precede V8 context creation; retry after load.
+        browser.FrameLoadEnd += (_, e) =>
         {
             if (!e.Frame.IsMain) return;
             try { e.Frame.ExecuteJavaScriptAsync(runtime.MemoryAgentScript); }
@@ -159,15 +176,29 @@ internal sealed partial class MainForm
     internal async Task<bool> CefMemoryAgentReadyForTestAsync()
     {
         if (!_cefEngine || !_cefRuntimes.TryGetValue(ActiveTab.Id, out var runtime) ||
-            !CefIsAlive(runtime) || !runtime.View.IsBrowserInitialized)
+            !CefIsAlive(runtime) || !runtime.View.IsBrowserInitialized ||
+            !runtime.View.CanExecuteJavascriptInMainFrame)
             return false;
         try
         {
             var response = await runtime.View.EvaluateScriptAsync(
                 "typeof globalThis.__mbrowser_memory_lab_agent_v1?.configure === 'function'");
+            if (!response.Success || response.Result is not true)
+            {
+                try
+                {
+                    File.AppendAllText(Path.Combine(DataPath, "cef-agent-diagnostics.log"),
+                        $"{DateTimeOffset.Now:u} ready={response.Success} result={response.Result} error={response.Message} url={runtime.View.Address} canJS={runtime.View.CanExecuteJavascriptInMainFrame}{Environment.NewLine}");
+                }
+                catch (IOException) { }
+            }
             return response.Success && response.Result is true;
         }
-        catch (ObjectDisposedException) { return false; }
+        catch (Exception ex)
+        {
+            Program.LogError(DataPath, ex);
+            return false;
+        }
     }
 
     private bool TryCefNavigate(string url)
