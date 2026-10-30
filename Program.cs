@@ -166,14 +166,9 @@ internal static class Program
                 CefSharp.CefSharpSettings.RuntimeStyle = CefSharp.CefRuntimeStyle.Chrome;
             if (!cefPrefs.HardwareAcceleration)
                 cefSettings.CefCommandLineArgs["disable-gpu"] = "";
-            // CEF 154 on Windows can crash in device/fido/win/webauthn_api.cc while
-            // binding the native Windows Hello WebAuthn API (fatal DCHECK, not a
-            // catchable .NET exception). Keep WebAuthn's other backends intact,
-            // but do not initialize the unstable native Windows API integration.
-            // This can temporarily disable Windows Hello/passkey authentication;
-            // password-based sign-in remains unaffected.
-            cefSettings.CefCommandLineArgs["disable-features"] =
-                "WebAuthenticationUseNativeWinApi";
+            // Preserve Windows Hello and native passkeys (enabled by default in
+            // Chromium). Do not disable WebAuthenticationUseNativeWinApi.
+            // The upstream initialization race requires a separately rebuilt CEF.
             // Unpacked Chromium extensions: CEF 154 may not expose the full
             // Manifest V3 service-worker API. Do not claim parity without tests.
             string installedExtensions = CefExtensionRegistry.EnabledPaths(dataPathCef);

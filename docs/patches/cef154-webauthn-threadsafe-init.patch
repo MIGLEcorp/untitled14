@@ -1,0 +1,55 @@
+﻿diff --git a/device/fido/win/webauthn_api.cc b/device/fido/win/webauthn_api.cc
+index 70104725a0..c779d15187 100644
+--- a/device/fido/win/webauthn_api.cc
++++ b/device/fido/win/webauthn_api.cc
+@@ -19,6 +19,7 @@
+ #include "base/strings/string_util_win.h"
+ #include "base/strings/stringprintf.h"
+ #include "base/strings/utf_string_conversions.h"
++#include "base/synchronization/lock.h"
+ #include "base/threading/scoped_blocking_call.h"
+ #include "base/threading/scoped_thread_priority.h"
+ #include "components/device_event_log/device_event_log.h"
+@@ -219,7 +220,10 @@ class WinWebAuthnApiImpl : public WinWebAuthnApi {
+ 
+  private:
+   void EnsureBound() {
+-    if (is_bound_) {
++    // Multiple CEF browser threads can query passkey availability concurrently.
++    // Binding the DLL functions must happen exactly once, including failure.
++    base::AutoLock lock(binding_lock_);
++    if (binding_attempted_) {
+       return;
+     }
+ 
+@@ -227,6 +231,7 @@ class WinWebAuthnApiImpl : public WinWebAuthnApi {
+       FIDO_LOG(DEBUG) << "Windows WebAuthn API deactivated via feature flag";
+       return;
+     }
++    binding_attempted_ = true;
+     {
+       // TODO(https://crbug.com/478100526): Make this load on a background
+       // thread
+@@ -275,8 +280,6 @@ class WinWebAuthnApiImpl : public WinWebAuthnApi {
+                         "WebAuthNDeletePlatformCredential");
+     }
+ 
+-    is_bound_ = true;
+-
+     // Determine the API version of webauthn.dll. There is a version currently
+     // shipping with Windows RS5 from before WebAuthNGetApiVersionNumber was
+     // added (i.e., before WEBAUTHN_API_VERSION_1). Therefore we allow this
+@@ -284,10 +287,13 @@ class WinWebAuthnApiImpl : public WinWebAuthnApi {
+     BIND_FN(get_api_version_number_, webauthn_dll_,
+             "WebAuthNGetApiVersionNumber");
+     api_version_ = get_api_version_number_ ? get_api_version_number_() : 0;
++    is_bound_ = true;
+ 
+     FIDO_LOG(DEBUG) << "webauthn.dll version " << api_version_;
+   }
+ 
++  base::Lock binding_lock_;
++  bool binding_attempted_ = false;
+   bool is_bound_ = false;
+   uint32_t api_version_ = 0;
+   HMODULE webauthn_dll_;
