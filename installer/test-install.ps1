@@ -17,6 +17,9 @@ foreach ($file in @('MBrowser.exe','MBrowser.dll','coreclr.dll','Modules\MBrowse
     if (!(Test-Path -LiteralPath (Join-Path $testApp $file))) { throw "Missing installed file: $file" }
 }
 if (Test-Path -LiteralPath (Join-Path $testApp 'unins000.exe')) { throw 'Test installation unexpectedly registered an uninstaller.' }
+if (!(Test-Path -LiteralPath (Join-Path $testApp '_MBrowser_TestProfileOnly'))) { throw 'Test install must be isolated from the real browser profile.' }
+$migrationBlocked = Start-Process -FilePath (Join-Path $testApp 'MBrowser.exe') -ArgumentList '--migrate-profile' -WindowStyle Hidden -Wait -PassThru
+if ($migrationBlocked.ExitCode -ne 5) { throw 'Test-installed browser must refuse real-profile migration.' }
 if ((Test-Path -LiteralPath (Join-Path $testApp 'Feather.exe')) -or (Test-Path -LiteralPath (Join-Path $testApp 'Modules\Feather.Features.dll'))) { throw 'Legacy executable fixtures were not removed.' }
 if (Test-Path -LiteralPath (Join-Path $testApp 'Feather')) { throw 'Legacy empty Feather folder was not removed.' }
 if ((Get-Content -LiteralPath (Join-Path $testApp 'preserved.txt') -Raw).Trim() -ne 'preserve this file') { throw 'Installer changed an unrelated file.' }

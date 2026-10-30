@@ -12,14 +12,58 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // Inno /TESTMODE installations use a private profile and mutex.
+        bool isolatedInstall = Directory.Exists(Path.Combine(
+            AppContext.BaseDirectory, "_MBrowser_TestProfileOnly"));
+        if (args.Length == 1 && args[0] == "--migrate-profile")
+        {
+            AttachConsole(-1);
+            if (isolatedInstall)
+            {
+                Console.Error.WriteLine("PROFILE_MIGRATION_UNAVAILABLE_IN_TEST_INSTALL");
+                return 5;
+            }
+            using var profileMutex = new Mutex(true, "Local\\FeatherBrowser", out bool firstOwner);
+            if (!firstOwner)
+            {
+                Console.Error.WriteLine("PROFILE_MIGRATION_BLOCKED_BROWSER_RUNNING");
+                return 3;
+            }
+            string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string source = Path.Combine(local, "FeatherBrowser");
+            string target = Path.Combine(local, "MBrowser");
+            try
+            {
+                var result = ProfileMigration.MoveVerified(source, target);
+                string status = result.DeletedLegacy ? "COMPLETE" :
+                    result.Migrated ? "COPIED_OLD_RETAINED" : "NOT_MIGRATED";
+                string log = Path.Combine(local, "MBrowser-migration-last-result.txt");
+                File.WriteAllText(log, "STATUS=" + status + Environment.NewLine +
+                    "FILES=" + result.Files + Environment.NewLine +
+                    "BYTES=" + result.Bytes + Environment.NewLine +
+                    "OLD_EXISTS=" + Directory.Exists(source) + Environment.NewLine +
+                    "NEW_EXISTS=" + Directory.Exists(target));
+                Console.WriteLine("MIGRATION_STATUS=" + status);
+                return result.DeletedLegacy ? 0 : result.Migrated ? 1 : 2;
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or
+                InvalidOperationException or System.Security.Cryptography.CryptographicException)
+            {
+                Console.Error.WriteLine("PROFILE_MIGRATION_FAILED=" +
+                    error.GetType().Name + ": " + error.Message);
+                return 4;
+            }
+        }
         if(args.Length==1 && args[0]=="--register-browser") { BrowserRegistration.Register(Application.ExecutablePath); return 0; }
         if(args.Length==1 && args[0]=="--unregister-browser") { BrowserRegistration.Unregister(Application.ExecutablePath); return 0; }
         if(args.Length==2 && args[0]=="--prepare-translator")
         {
             string local=Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            string profile=Path.Combine(local,"MBrowser");
+            string profile=isolatedInstall
+                ? Path.Combine(AppContext.BaseDirectory,"TestProfile")
+                : Path.Combine(local,"MBrowser");
             // Never create the new root prematurely before the offline profile migration.
-            if (!Directory.Exists(profile) && Directory.Exists(Path.Combine(local,"FeatherBrowser")))
+            if (!isolatedInstall && !Directory.Exists(profile) && Directory.Exists(Path.Combine(local,"FeatherBrowser")))
                 profile=Path.Combine(local,"FeatherBrowser");
             TranslatorPackage.PrepareAsync(profile,args[1]).GetAwaiter().GetResult(); return 0;
         }
@@ -48,8 +92,10 @@ internal static class Program
             bool customCef = CefMemoryFeatures.HasVerifiedCustomBuildMarker(AppContext.BaseDirectory);
             string dataPathCef = cefSmoke
                 ? Path.Combine(Path.GetTempPath(), "MBrowser-cef-smoke-" + Guid.NewGuid().ToString("N"))
-                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "MBrowser");
+                : isolatedInstall
+                    ? Path.Combine(AppContext.BaseDirectory, "TestProfile")
+                    : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "MBrowser");
             using var cefSmokeServer = cefSmoke ? new CefSmokeServer(credentialSmoke) : null;
             string[] targets = cefSmoke ? [cefSmokeServer!.Url] :
                 BrowserDocuments.ParseArguments(args.Length > 0 && args[0] == "--cef"
@@ -57,7 +103,8 @@ internal static class Program
             // Use the SAME installation mutex as v4.2.1. Never allow two versions
             // to write the shared session and preferences concurrently.
             using var mutexCef = new Mutex(true,
-                cefSmoke ? "Local\\MBrowserCefSmoke-" + Guid.NewGuid() : "Local\\FeatherBrowser",
+                cefSmoke ? "Local\\MBrowserCefSmoke-" + Guid.NewGuid() :
+                    isolatedInstall ? "Local\\MBrowserTestInstall" : "Local\\FeatherBrowser",
                 out bool cefFirst);
             if (!cefFirst)
             {
@@ -65,7 +112,7 @@ internal static class Program
                     MessageBox.Show("MBrowser уже открыт. Закройте старую версию перед запуском обновления.", "MBrowser");
                 return 0;
             }
-            if (!cefSmoke)
+            if (!cefSmoke && !isolatedInstall)
                 dataPathCef = UserProfileBootstrap.Prepare(dataPathCef);
             Directory.CreateDirectory(dataPathCef);
             // The previous profile is migrated and verified before CEF is initialized.

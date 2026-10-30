@@ -33,6 +33,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; Flags: unchecked
 [Files]
 Source: "..\dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+[Dirs]
+Name: "{app}\_MBrowser_TestProfileOnly"; Check: IsTestInstall
 [Icons]
 Name: "{group}\MBrowser"; Filename: "{app}\MBrowser.exe"; AppUserModelID: "MIGLEcorp.MBrowser"; Check: not IsTestInstall
 Name: "{autodesktop}\MBrowser"; Filename: "{app}\MBrowser.exe"; AppUserModelID: "MIGLEcorp.MBrowser"; Tasks: desktopicon; Check: not IsTestInstall
