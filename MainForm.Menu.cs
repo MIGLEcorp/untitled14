@@ -43,15 +43,8 @@ internal sealed partial class MainForm
             rows(IsFullScreen ? "Выйти из полного экрана" : "Полный экран", ToggleFullScreen);
             rows("Закладки", ShowBookmarks);
             rows("Пароли MBrowser (Windows DPAPI)", ShowPasswords);
-            rows("Менеджер Chromium · эксперимент: " +
-                (_preferences.ExperimentalChromePasswordManager ? "вкл" : "выкл"), () =>
-            {
-                _preferences.ExperimentalChromePasswordManager = !_preferences.ExperimentalChromePasswordManager;
-                _preferences.Save(DataPath);
-                _status.Text = "Нужен перезапуск MBrowser для переключения режима Chromium.";
-            });
-            if (_preferences.ExperimentalChromePasswordManager)
-                rows("Открыть встроенный менеджер Chromium", ShowNativeChromiumPasswordManager);
+            rows("Менеджер паролей Chromium (временно недоступен)", () =>
+                _status.Text = "Отключён из-за ошибки Windows Hello в CEF 154. Пароли MBrowser работают.");
             rows("Импорт данных…", ShowImport);
             rows("Перенос со старого WebView2  ›", ShowCefMigrationNotice);
             rows("Загрузки", ShowDownloads);

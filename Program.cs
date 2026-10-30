@@ -162,7 +162,12 @@ internal static class Program
                 RootCachePath = cefRoot,
                 CachePath = cefCache
             };
-            if (chromeRuntimeSmoke || cefPrefs.ExperimentalChromePasswordManager)
+            // Chromium's Chrome-style password-manager runtime invokes Windows Hello
+            // through chrome/browser/device_reauth/win/authenticator_win.cc. On our
+            // CEF 154 build this triggers a fatal PostAsyncResults DCHECK even when
+            // the native WebAuthn feature is disabled. Keep normal browsing in
+            // the stable Alloy runtime until a patched libcef is verified.
+            if (chromeRuntimeSmoke)
                 CefSharp.CefSharpSettings.RuntimeStyle = CefSharp.CefRuntimeStyle.Chrome;
             if (!cefPrefs.HardwareAcceleration)
                 cefSettings.CefCommandLineArgs["disable-gpu"] = "";

@@ -1,4 +1,4 @@
-param([string]$Installer = (Join-Path $PSScriptRoot '..\artifacts\MBrowser-4.4.0-rc.6-Setup-x64.exe'))
+param([string]$Installer = (Join-Path $PSScriptRoot '..\artifacts\MBrowser-4.4.0-rc.7-Setup-x64.exe'))
 $ErrorActionPreference = 'Stop'
 $installerPath = (Resolve-Path -LiteralPath $Installer).Path
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('MBrowser-install-' + [Guid]::NewGuid().ToString('N'))

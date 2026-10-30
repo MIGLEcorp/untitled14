@@ -18,6 +18,8 @@ internal static class ActivePageMemoryController
   // Do not interfere with cross-origin embedded widgets or frames.
   if (globalThis.top !== globalThis.self) return;
   let options = {};
+  let lastOptionsSignature = null;
+  let lastVisibilityScan = 0;
   let hadActivePolicies = false;
   let observer = null;
   let scheduled = false;
@@ -81,6 +83,10 @@ internal static class ActivePageMemoryController
     for (const video of root.querySelectorAll('video')) processVideo(video);
   }
   function updateContentVisibility() {
+    // Content-heavy sites can mutate the DOM hundreds of times per second.
+    // Repeating a whole-document querySelectorAll each time hurts page loads.
+    if (enabled('contentVisibility') && performance.now() - lastVisibilityScan < 900) return;
+    lastVisibilityScan = performance.now();
     // Experimental layout skipping: never removes DOM nodes or JavaScript references.
     let style = document.getElementById(styleId);
     if (!enabled('contentVisibility')) {
@@ -117,7 +123,11 @@ internal static class ActivePageMemoryController
   }
   const api = {
     configure(next) {
-      options = next && typeof next === 'object' ? next : {};
+      const normalized = next && typeof next === 'object' ? next : {};
+      const signature = JSON.stringify(normalized);
+      if (signature === lastOptionsSignature) return;
+      lastOptionsSignature = signature;
+      options = normalized;
       const anyEnabled = enabled('images') || enabled('videos') || enabled('contentVisibility');
       // Default settings turn every policy off. Avoid full DOM scans of heavy
       // pages (marketplaces, social feeds) each time CEF reinjects the agent.
