@@ -9,6 +9,7 @@ internal static class TabHibernationManager
     // Tracks user edits without storing any field content. Executed in every new document.
     internal const string ActivityTrackerScript = """
         (() => {
+          if (Object.getOwnPropertyDescriptor(window, '__mbrowserFormEdited')) return;
           let dirty = false;
           document.addEventListener('input', () => { dirty = true; }, true);
           document.addEventListener('change', () => { dirty = true; }, true);

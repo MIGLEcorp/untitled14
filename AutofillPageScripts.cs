@@ -40,14 +40,13 @@ internal static class AutofillPageScripts
     // CEF sends only message metadata to the host, never a saved credential.
     // The host independently probes the current main-frame document before filling.
     internal static string CefObserver => Observer
-        .Replace("window.chrome.webview.postMessage", "CefSharp.PostMessage", StringComparison.Ordinal)
-        .Replace("if (window !== window.top || !window.isSecureContext) return;",
-            "if (window !== window.top || !window.isSecureContext) return; window.__mbrowserCredObserverRan = true;",
-            StringComparison.Ordinal);
+        .Replace("window.chrome.webview.postMessage", "CefSharp.PostMessage", StringComparison.Ordinal);
 
     internal static string Observer => """
         (() => {
             if (window !== window.top || !window.isSecureContext) return;
+            if (window.__mbrowserCredObserverRan) return;
+            window.__mbrowserCredObserverRan = true;
         """ + LoginFields + """
             const seen = new WeakSet();
             let pending;
@@ -72,24 +71,32 @@ internal static class AutofillPageScripts
                     }
                     for (const node of record.addedNodes) {
                         if (node instanceof Element &&
-                            (node.matches('input') || node.querySelector('input'))) {
+                            (node.matches('input,form'))) {
                             ready(); return;
                         }
                     }
                 }
             };
-            document.addEventListener('focusin', () => queueMicrotask(() => post('focus')), true);
+            document.addEventListener('focusin', event => {
+                if (!(event.target instanceof HTMLInputElement)) return;
+                if (!document.querySelector('input[type="password"]')) return;
+                queueMicrotask(() => post('focus'));
+            }, true);
             document.addEventListener('pointerdown', event => {
                 if (!document.querySelector('input[type="password"]')) return;
                 const login = findLogin();
                 if (login && ![login.user, login.password].includes(event.target))
                     window.chrome.webview.postMessage({type:'feather.credentials', kind:'dismiss', origin:location.origin});
             }, true);
-            document.addEventListener('focusout', () => setTimeout(() => {
+            document.addEventListener('focusout', event => {
+                if (!(event.target instanceof HTMLInputElement)) return;
+                if (!document.querySelector('input[type="password"]')) return;
+                setTimeout(() => {
                 const login = findLogin();
                 if (!login || ![login.password, login.user].includes(document.activeElement))
                     window.chrome.webview.postMessage({ type: 'feather.credentials', kind: 'dismiss', origin: location.origin });
-            }, 0), true);
+                }, 0);
+            }, true);
             let lastDismissAt = 0;
             const dismiss = () => {
                 if (!document.querySelector('input[type="password"]')) return;

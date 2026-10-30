@@ -88,21 +88,25 @@ internal sealed class CefNavigationHandler : RequestHandler
 {
     private readonly MainForm _owner;
     private readonly BrowserTab _tab;
-    private readonly CefResourceTimingHandler _resourceTimings;
+    // Per-resource managed callbacks are expensive on script-heavy SPAs.
+    // Keep detailed tracing opt-in instead of intercepting every request.
+    private readonly CefResourceTimingHandler? _resourceTimings;
+    internal bool ResourceTracingEnabled => _resourceTimings is not null;
 
     internal CefNavigationHandler(MainForm owner, BrowserTab tab)
     {
         _owner = owner;
         _tab = tab;
-        _resourceTimings = new CefResourceTimingHandler(owner.DataPath, tab.Id);
+        if (Environment.GetEnvironmentVariable("MBROWSER_TRACE_CEF_RESOURCES") == "1")
+            _resourceTimings = new CefResourceTimingHandler(owner.DataPath, tab.Id);
     }
 
-    internal void LogPendingResources() => _resourceTimings.LogPendingResources();
+    internal void LogPendingResources() => _resourceTimings?.LogPendingResources();
 
     protected override IResourceRequestHandler GetResourceRequestHandler(
         IWebBrowser chromiumWebBrowser, IBrowser browser, IFrame frame, IRequest request,
         bool isNavigation, bool isDownload, string requestInitiator, ref bool disableDefaultHandling) =>
-        _resourceTimings;
+        _resourceTimings!;
 
     protected override bool OnBeforeBrowse(IWebBrowser chromiumWebBrowser, IBrowser browser,
         IFrame frame, IRequest request, bool userGesture, bool isRedirect)

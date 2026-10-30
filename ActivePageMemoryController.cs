@@ -176,6 +176,10 @@ internal static class ActivePageMemoryController
 })();
 """;
 
+    internal static bool HasEnabledPolicies(BrowserPreferences preferences) =>
+        preferences.LazyOffscreenImages || preferences.DeferOffscreenVideo ||
+        preferences.ExperimentalContentVisibility;
+
     internal static string OptionsJson(BrowserPreferences preferences) => JsonSerializer.Serialize(new
     {
         images = preferences.LazyOffscreenImages,

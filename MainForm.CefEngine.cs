@@ -51,7 +51,8 @@ internal sealed partial class MainForm
         var runtime = new CefTabRuntime(tab, browser, navigationHandler)
         {
             Loading = true,
-            MemoryAgentScript = ActivePageMemoryController.Script(_preferences)
+            MemoryAgentScript = _smoke || ActivePageMemoryController.HasEnabledPolicies(_preferences)
+                ? ActivePageMemoryController.Script(_preferences) : ""
         };
         if (_hibernatedIds.Remove(tab.Id)) runtime.RestoreStartedUtc = DateTimeOffset.UtcNow;
         _cefRuntimes.Add(tab.Id, runtime);
@@ -93,8 +94,8 @@ internal sealed partial class MainForm
             // Reapply page policies once the main-frame V8 context is ready.
             // Native CEF builds can deliver FrameLoadEnd before the final
             // renderer context is able to execute injected JavaScript.
-            if (!e.IsLoading && runtime.View.IsBrowserInitialized &&
-                runtime.View.CanExecuteJavascriptInMainFrame)
+            if (!e.IsLoading && runtime.MemoryAgentScript.Length > 0 &&
+                runtime.View.IsBrowserInitialized && runtime.View.CanExecuteJavascriptInMainFrame)
             {
                 try { runtime.View.ExecuteScriptAsync(runtime.MemoryAgentScript); }
                 catch (ObjectDisposedException) { }
@@ -130,9 +131,13 @@ internal sealed partial class MainForm
             if (!e.Frame.IsMain) return;
             runtime.MainFrameReady = false;
             runtime.MainFrameStartedTimestamp = Stopwatch.GetTimestamp();
-            _ = LogPendingResourcesAfterDelayAsync(runtime);
-            try { e.Frame.ExecuteJavaScriptAsync(runtime.MemoryAgentScript); }
-            catch (ObjectDisposedException) { }
+            if (runtime.NavigationHandler.ResourceTracingEnabled)
+                _ = LogPendingResourcesAfterDelayAsync(runtime);
+            if (runtime.MemoryAgentScript.Length > 0)
+            {
+                try { e.Frame.ExecuteJavaScriptAsync(runtime.MemoryAgentScript); }
+                catch (ObjectDisposedException) { }
+            }
         };
         // FrameLoadStart can precede V8 context creation; retry after load.
         browser.FrameLoadEnd += (_, e) =>
@@ -140,7 +145,8 @@ internal sealed partial class MainForm
             if (!e.Frame.IsMain) return;
             try
             {
-                e.Frame.ExecuteJavaScriptAsync(runtime.MemoryAgentScript);
+                if (runtime.MemoryAgentScript.Length > 0)
+                    e.Frame.ExecuteJavaScriptAsync(runtime.MemoryAgentScript);
                 e.Frame.ExecuteJavaScriptAsync(AutofillPageScripts.CefObserver);
                 e.Frame.ExecuteJavaScriptAsync(TabHibernationManager.ActivityTrackerScript);
                 if (tab.ScrollX > 0 || tab.ScrollY > 0)
@@ -433,14 +439,16 @@ internal sealed partial class MainForm
 
     private void ApplyCefActivePageSettings()
     {
-        string script = ActivePageMemoryController.Script(_preferences);
+        bool enable = _smoke || ActivePageMemoryController.HasEnabledPolicies(_preferences);
+        string script = enable ? ActivePageMemoryController.Script(_preferences) : "";
+        string update = enable ? script : ActivePageMemoryController.LiveUpdate(_preferences);
         foreach (var runtime in _cefRuntimes.Values)
         {
             if (!CefIsAlive(runtime)) continue;
             runtime.MemoryAgentScript = script;
             if (runtime.View.IsBrowserInitialized)
             {
-                try { runtime.View.ExecuteScriptAsync(script); }
+                try { runtime.View.ExecuteScriptAsync(update); }
                 catch (ObjectDisposedException) { }
             }
         }
