@@ -1,4 +1,3 @@
-using Microsoft.Web.WebView2.Core;
 
 namespace MBrowser;
 
@@ -39,67 +38,6 @@ internal sealed partial class MainForm
         bool allowed = await completion.Task;
         return allowed;
     }
-
-    private void ConfigurePermissions(TabRuntime runtime)
-    {
-        runtime.View.CoreWebView2.PermissionRequested += (_, args) =>
-        {
-            args.Handled = true;
-            args.State = CoreWebView2PermissionState.Deny;
-            args.SavesInProfile = false;
-            var deferral = args.GetDeferral();
-            RunUi(async () =>
-            {
-                await _permissionQueue.WaitAsync();
-                try
-                {
-                    if (!IsAlive(runtime) || runtime.Tab != ActiveTab || !AddressParser.TryWebUrl(args.Uri, out string url)) return;
-                    var origin = new Uri(url).GetLeftPart(UriPartial.Authority);
-                    if (new Uri(url).Scheme != "https" && !new Uri(url).IsLoopback) return;
-                    string name = args.PermissionKind switch
-                    {
-                        CoreWebView2PermissionKind.Camera => "Камера",
-                        CoreWebView2PermissionKind.Microphone => "Микрофон",
-                        CoreWebView2PermissionKind.Geolocation => "Местоположение",
-                        CoreWebView2PermissionKind.Notifications => "Уведомления",
-                        CoreWebView2PermissionKind.ClipboardRead => "Чтение буфера обмена",
-                        _ => args.PermissionKind.ToString()
-                    };
-                    bool allowed = await AskInsideWindowAsync(name, origin + "\n\nСайт запрашивает доступ: " + name.ToLowerInvariant() + ".", remember: true);
-                    if (!IsAlive(runtime)) return;
-                    args.State = allowed ? CoreWebView2PermissionState.Allow : CoreWebView2PermissionState.Deny;
-                    args.SavesInProfile = _permissionRemember?.Checked == true;
-                }
-                finally
-                {
-                    _permissionChoice = null;
-                    _permissionRemember = null;
-                    if (ReferenceEquals(_overlay, _permissionPanel)) CloseOverlay();
-                    _permissionPanel = null;
-                    // Dispose completes this SDK's deferral. Calling Complete and then Dispose
-                    // would complete it twice and raise E_ILLEGAL_METHOD_CALL.
-                    try { deferral.Dispose(); } catch (System.Runtime.InteropServices.COMException) { }
-                    _permissionQueue.Release();
-                }
-            });
-        };
-    }
-
-    private void ShowPermissionSettings() => RunUi(async () =>
-    {
-        await WithProfileCoreAsync(async core =>
-        {
-            var settings = await core.Profile.GetNonDefaultPermissionSettingsAsync();
-            var rows = settings.Select(setting => (Origin: setting.PermissionOrigin, Kind: setting.PermissionKind, State: setting.PermissionState)).ToArray();
-            ShowMenuPage("Разрешения сайтов", add =>
-            {
-                if (rows.Length == 0) add("Нет сохранённых решений", () => { });
-                foreach (var setting in rows.Take(20))
-                    add(new Uri(setting.Origin).Host + " · " + setting.Kind + " · " + setting.State,
-                        () => RunUi(() => WithProfileCoreAsync(async current => { await current.Profile.SetPermissionStateAsync(setting.Kind, setting.Origin, CoreWebView2PermissionState.Default); })));
-            });
-        });
-    });
 
     internal void DecidePermissionForTest(bool allow)
     {

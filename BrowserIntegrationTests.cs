@@ -51,20 +51,5 @@ internal static class BrowserIntegrationTests
             Assert(received.Task.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult().Single().Contains("путь"), "IPC payload corrupted");
         });
     }
-    internal static async Task RunUiAsync(MainForm form, string profile, Action<bool, string> check)
-    {
-        var text = form.AddressInputForTest;
-        var pill = (PillInput)text.Parent!;
-        check(text.BorderStyle == BorderStyle.None && Math.Abs(text.Top - (pill.Height - text.Height) / 2) <= 1, "Capsule inputs center native text vertically without a rectangular top strip");
-        check(pill.Height <= 50 && pill.Bottom <= pill.Parent!.ClientSize.Height - pill.Parent.Padding.Bottom, $"The address capsule fits completely inside its toolbar row ({pill.Bounds}; parent {pill.Parent!.ClientSize}, padding {pill.Parent.Padding})");
-        string file = Path.Combine(profile, "opened file.html");
-        File.WriteAllText(file, "<!doctype html><title>MBrowser local document</title><h1 id='local'>Local file opened</h1>");
-        int previous = form.TabCount;
-        await form.OpenShellTargetsAsync([file]);
-        await SmokeTests.WaitUntilAsync(() => form.ActiveCore?.DocumentTitle == "MBrowser local document", "Local document did not load");
-        check(form.TabCount == previous + 1 && !form.BookmarksVisibleForTest, "A shell HTML document opens in a tab with bookmarks hidden");
-        check(await form.ActiveCore!.ExecuteScriptAsync("document.getElementById('local').textContent") == "\"Local file opened\"", "Local document JavaScript runs in the real engine");
-        await form.CloseTabAsync(form.TabCount - 1);
-    }
     private static void Assert(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
 }

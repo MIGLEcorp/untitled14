@@ -82,6 +82,45 @@ public static class CoreTests
                 Assert(!strip.HasOverflowForTest && strip.VisibleStartForTest == 0 &&
                     strip.VisibleCountForTest == 2, "Closing tabs left hidden entries");
             });
+            Check("CEF unpacked extension IDs match Chromium path identity", () =>
+            {
+                string a = Path.Combine(folder, "cef-ext-a"), b = Path.Combine(folder, "cef-ext-b");
+                Directory.CreateDirectory(a); Directory.CreateDirectory(b);
+                const string manifest = "{\"manifest_version\":3,\"name\":\"Test\",\"version\":\"1.0\"}";
+                File.WriteAllText(Path.Combine(a, "manifest.json"), manifest);
+                File.WriteAllText(Path.Combine(b, "manifest.json"), manifest);
+                string first = CefExtensionIdentity.FromFolder(a);
+                string second = CefExtensionIdentity.FromFolder(b);
+                Assert(first.Length == 32 && first.All(c => c is >= 'a' and <= 'p'),
+                    "CEF extension ID format is not Chromium compatible");
+                Assert(first != second, "Different unpacked paths returned identical IDs");
+                string publicKey = Convert.ToBase64String(Enumerable.Range(0, 96).Select(i => (byte)i).ToArray());
+                string keyed = "{\"manifest_version\":3,\"name\":\"Test\",\"version\":\"1.0\",\"key\":\""
+                    + publicKey + "\"}";
+                File.WriteAllText(Path.Combine(a, "manifest.json"), keyed);
+                File.WriteAllText(Path.Combine(b, "manifest.json"), keyed);
+                Assert(CefExtensionIdentity.FromFolder(a) == CefExtensionIdentity.FromFolder(b),
+                    "Keyed Chromium extension ID changed with its folder");
+            });
+
+            Check("CEF extension registry safely installs, disables and lists packages", () =>
+            {
+                string source = Path.Combine(folder, "cef-extension-source");
+                string profile = Path.Combine(folder, "cef-extension-profile");
+                Directory.CreateDirectory(source);
+                File.WriteAllText(Path.Combine(source, "manifest.json"),
+                    "{\"manifest_version\":3,\"name\":\"Registry Test\",\"version\":\"1.0\",\"permissions\":[\"storage\"]}");
+                File.WriteAllText(Path.Combine(source, "worker.js"), "// isolated test");
+                var installed = CefExtensionRegistry.Add(profile, source);
+                Assert(installed.Id == CefExtensionIdentity.FromFolder(installed.Folder),
+                    "Extension registry used an internal instead of a Chromium ID");
+                Assert(CefExtensionRegistry.Read(profile).Single().Id == installed.Id,
+                    "Extension registry could not restore the real ID");
+                CefExtensionRegistry.Save(profile, [installed with { Enabled = false }]);
+                Assert(CefExtensionRegistry.EnabledPaths(profile) == "",
+                    "Disabled extension was still passed to CEF at startup");
+            });
+
             Check("Address parsing: domains, ports, loopback and Unicode", () =>
             {
                 Resolves(" example.com ", "https://example.com/");

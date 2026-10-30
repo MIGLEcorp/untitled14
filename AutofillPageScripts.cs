@@ -37,6 +37,10 @@ internal static class AutofillPageScripts
         "const login = findLogin(); if (!login" + (focusedOnly ? " || ![login.password, login.user].includes(document.activeElement)" : "") +
         ") return null; const rect = login.anchor.getBoundingClientRect(); return { origin: location.origin, focused:[login.password,login.user].includes(document.activeElement), x: rect.x, y: rect.y, width: rect.width, height: rect.height, viewportWidth: innerWidth, viewportHeight: innerHeight }; })()";
 
+    // CEF sends only message metadata to the host, never a saved credential.
+    // The host independently probes the current main-frame document before filling.
+    internal static string CefObserver => Observer.Replace("window.chrome.webview.postMessage", "CefSharp.PostMessage", StringComparison.Ordinal);
+
     internal static string Observer => """
         (() => {
             if (window !== window.top || !window.isSecureContext) return;

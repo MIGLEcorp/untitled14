@@ -13,8 +13,8 @@
     <Company>MIGLEcorp</Company>
     <ApplicationIcon>assets\mbrowser.ico</ApplicationIcon>
     <RootNamespace>MBrowser</RootNamespace>
-    <Version>4.3.0</Version>
-    <InformationalVersion>4.3.0</InformationalVersion>
+    <Version>4.4.0</Version>
+    <InformationalVersion>4.4.0-cef-only-candidate</InformationalVersion>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -22,7 +22,6 @@
     <ServerGarbageCollection>false</ServerGarbageCollection>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />
     <PackageReference Include="CefSharp.WinForms.NETCore" Version="154.0.340" />
     <Content Include="Native\MBrowser.GpuDiagnostics.dll" Link="MBrowser.GpuDiagnostics.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="assets\*.jpg;assets\sakura-*.png;assets\mbrowser.ico;assets\ATTRIBUTION.md;assets\REN-PY-ART-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
@@ -30,10 +29,8 @@
     <ProjectReference Include="Features\MBrowser.Features.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;PublishDir" />
     <Content Include="Features\bin\$(Configuration)\net10.0-windows\MBrowser.Features.dll" Link="Modules\MBrowser.Features.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
-  <!-- This WebView2 SDK also adds WPF by default. MBrowser uses WinForms only. -->
-  <Target Name="RemoveUnusedWpfReference" BeforeTargets="ResolveAssemblyReferences">
-    <ItemGroup>
-      <Reference Remove="@(Reference)" Condition="'%(Reference.Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
-    </ItemGroup>
-  </Target>
+  <ItemGroup>
+    <!-- Legacy WebView2 code retained in git history, excluded from CEF-only binary. -->
+    <Compile Remove="MainForm.WebViews.cs;MainForm.Sleep.cs;MainForm.Extensions.cs;MainForm.Translator.cs;SmokeTests.cs;WindowFrameTests.cs;PasswordAutofillTests.cs;TranslatorTests.cs" />
+  </ItemGroup>
 </Project>

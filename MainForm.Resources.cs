@@ -140,7 +140,7 @@ internal sealed partial class MainForm
         var systemGpuUsage = NativeGpuDiagnostics.SystemDedicatedUsage();
         long available = AdaptiveResourceManager.AvailableRamBytes();
         int unloaded = _session.Tabs.Count(tab => tab.CurrentUrl is not null and not "about:blank" &&
-                                                     !_runtimes.ContainsKey(tab.Id));
+                                                     !_cefRuntimes.ContainsKey(tab.Id));
         long sessionBytes = 0;
         try { sessionBytes = new FileInfo(Path.Combine(DataPath, "session.json")).Length; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
@@ -151,11 +151,11 @@ internal sealed partial class MainForm
             rows("Приложение Private Bytes: " + Mb(appPrivate), ShowResourceDiagnostics);
             rows("Все процессы Working Set*: " + Mb(memory.WorkingSetBytes), ShowResourceDiagnostics);
             rows("Все процессы Private Bytes: " + Mb(memory.PrivateBytes), ShowResourceDiagnostics);
-            rows("WebView2 процессы Working Set*: " + Mb(Math.Max(0, memory.WorkingSetBytes-appWs)), ShowResourceDiagnostics);
+            rows("CEF процессы Working Set*: " + Mb(Math.Max(0, memory.WorkingSetBytes-appWs)), ShowResourceDiagnostics);
             rows("Состояние вкладок на SSD: " + (sessionBytes / 1024.0).ToString("N1") + " КБ", ShowResourceDiagnostics);
             rows("Процессов: " + memory.ProcessCount, ShowResourceDiagnostics);
             rows("Доступно RAM: " + (available >= 0 ? Mb(available) : "нет данных"), ShowResourceDiagnostics);
-            rows("Активных WebView2: " + _runtimes.Count, ShowResourceDiagnostics);
+            rows("Активных CEF: " + _cefRuntimes.Count, ShowResourceDiagnostics);
             rows("Выгружено вкладок: " + unloaded, ShowResourceDiagnostics);
             rows("Выгрузок / восстановлений: " + _hibernateCount + " / " + _restoreCount, ShowResourceDiagnostics);
             rows("Среднее восстановление: " + (_restoreCount == 0 ? "—" :
@@ -164,7 +164,7 @@ internal sealed partial class MainForm
             rows("Бюджет GPU для приложения (DXGI): " + (gpu is { } v ? Mb((long)v.Budget) : "нет данных"), ShowResourceDiagnostics);
             rows("* Сумма WS может учитывать общие страницы", ShowResourceDiagnostics);
             rows("* PDH — видеопамять по счётчикам GPU", ShowResourceDiagnostics);
-            rows("DXGI — бюджет процесса, не всех WebView2", ShowResourceDiagnostics);
+            rows("DXGI — бюджет процесса, не всех процессов CEF", ShowResourceDiagnostics);
             rows("Обновить показатели", ShowResourceDiagnostics);
             rows("Настройки памяти и GPU", ShowResourceSettings);
         });

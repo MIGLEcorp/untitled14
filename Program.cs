@@ -19,6 +19,12 @@ internal static class Program
             string profile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"FeatherBrowser");
             TranslatorPackage.PrepareAsync(profile,args[1]).GetAwaiter().GetResult(); return 0;
         }
+        if (args.Length > 0 && args[0] == "--webview2")
+        {
+            MessageBox.Show("WebView2 удалён из MBrowser. Запустите без --webview2.",
+                "MBrowser CEF-only", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return 2;
+        }
         ApplicationConfiguration.Initialize();
         SetCurrentProcessExplicitAppUserModelID("MIGLEcorp.MBrowser");
         if (args.Length==1 && args[0]=="--self-test")
@@ -27,13 +33,10 @@ internal static class Program
             return CoreTests.Run();
         }
 
-        // v4.3: embedded Chromium CEF is the primary renderer.
-        // --webview2 restores the previous engine without touching existing user data.
-        // --smoke-test keeps the original WebView2 regression route.
-        bool cefSmoke = args.Length == 1 && args[0] == "--cef-smoke";
-        bool cefMain = cefSmoke || (args.Length == 0 ||
-            (args[0] != "--webview2" && args[0] != "--smoke-test"));
-        if (cefMain)
+        // CEF-only: WebView2 has been removed from the production executable.
+        bool extensionPopupSmoke = args.Length == 1 && args[0] == "--cef-extension-ui-smoke";
+        bool extensionSmoke = extensionPopupSmoke || (args.Length == 1 && args[0] == "--cef-extension-smoke");
+        bool cefSmoke = extensionSmoke || (args.Length == 1 && (args[0] == "--cef-smoke" || args[0] == "--smoke-test"));
         {
             bool customCef = CefMemoryFeatures.HasVerifiedCustomBuildMarker(AppContext.BaseDirectory);
             string dataPathCef = cefSmoke
@@ -56,17 +59,60 @@ internal static class Program
                 return 0;
             }
             Directory.CreateDirectory(dataPathCef);
-            // WebView2 userdata/profile and legacy passwords remain untouched.
+            // Existing profile and passwords stay untouched.
             string cefRoot = Path.Combine(dataPathCef, "CEFRuntime");
             Directory.CreateDirectory(cefRoot);
             string cefCache = Path.Combine(cefRoot, "Default");
             Directory.CreateDirectory(cefCache);
+            if (extensionSmoke)
+            {
+                string source = Path.Combine(dataPathCef, "mv3-smoke-source");
+                Directory.CreateDirectory(source);
+                File.WriteAllText(Path.Combine(source, "manifest.json"),
+                    """{"manifest_version":3,"name":"MBrowser CEF MV3 Smoke","version":"1.0.0","action":{"default_popup":"popup.html"},"permissions":["storage"],"background":{"service_worker":"worker.js"},"content_scripts":[{"matches":["http://127.0.0.1/*"],"js":["inject.js"],"run_at":"document_start"}]}""");
+                File.WriteAllText(Path.Combine(source, "inject.js"),
+                    """
+                    document.documentElement.dataset.mbrowserMv3Smoke = 'loaded';
+                    document.documentElement.dataset.mbrowserMv3Id = chrome.runtime.id;
+                    try {
+                      chrome.runtime.sendMessage({type:'mv3-ping'}, reply => {
+                        if (chrome.runtime.lastError) {
+                          document.documentElement.dataset.mbrowserMv3Worker = 'error';
+                          return;
+                        }
+                        document.documentElement.dataset.mbrowserMv3Worker =
+                          reply?.pong === true ? 'ok' : 'bad';
+                      });
+                    } catch (e) { document.documentElement.dataset.mbrowserMv3Worker = 'exception'; }
+                    """);
+                File.WriteAllText(Path.Combine(source, "worker.js"),
+                    """
+                    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+                        if (msg?.type === 'mv3-ping') {
+                          chrome.storage.local.set({mbrowserSmoke: true}).then(() => {
+                            sendResponse({pong:true});
+                          }).catch(() => sendResponse({pong:false}));
+                          return true;
+                        }
+                      });
+                    """);
+                File.WriteAllText(Path.Combine(source, "popup.html"),
+                    """<!doctype html><html><head><title>MBrowser MV3 popup</title></head><body><div id="mbrowser-popup-smoke">popup-ok</div></body></html>""");
+                CefExtensionRegistry.Add(dataPathCef, source);
+            }
             var cefSettings = new CefSharp.WinForms.CefSettings
             {
                 RootCachePath = cefRoot,
                 CachePath = cefCache
             };
             var cefPrefs = BrowserPreferences.Load(dataPathCef);
+            if (!cefPrefs.HardwareAcceleration)
+                cefSettings.CefCommandLineArgs["disable-gpu"] = "";
+            // Unpacked Chromium extensions: CEF 154 may not expose the full
+            // Manifest V3 service-worker API. Do not claim parity without tests.
+            string installedExtensions = CefExtensionRegistry.EnabledPaths(dataPathCef);
+            if (!string.IsNullOrWhiteSpace(installedExtensions))
+                cefSettings.CefCommandLineArgs["load-extension"] = installedExtensions;
             string cefFeatures = CefMemoryFeatures.CommandLine(cefPrefs, customCef);
             if (cefFeatures.Length > 0)
                 cefSettings.CefCommandLineArgs["enable-features"] = cefFeatures;
@@ -97,6 +143,11 @@ internal static class Program
                         try
                         {
                             bool agent = await cefForm.CefMemoryAgentReadyForTestAsync();
+                            bool mv3 = extensionSmoke && await cefForm.CefExtensionSmokeReadyForTestAsync();
+                            bool mv3Worker = extensionSmoke && await cefForm.CefExtensionWorkerReadyForTestAsync();
+                            string mv3Id = extensionSmoke ? await cefForm.CefExtensionIdForTestAsync() : "";
+                            bool popupReady = extensionPopupSmoke &&
+                                await cefForm.CefExtensionPopupReadyForTestAsync(mv3Id);
                             var info = cefForm.CefDiagnosticsForTest();
                             File.WriteAllText(Path.Combine(dataPathCef, "cef-smoke.txt"),
                                 "CEF_WINDOW_SHOWN=" + cefForm.IsHandleCreated +
@@ -104,9 +155,14 @@ internal static class Program
                                 Environment.NewLine + "CEF_RENDERER_INITIALIZED=" + info.BrowserInitialized +
                                 Environment.NewLine + "CEF_RENDERER_ADDRESS=" + info.Address +
                                 Environment.NewLine + "CEF_MEMORY_AGENT_LOADED=" + agent +
+                                Environment.NewLine + "CEF_MV3_CONTENT_SCRIPT_LOADED=" + mv3 +
+                                Environment.NewLine + "CEF_MV3_WORKER_MESSAGE_OK=" + mv3Worker +
+                                Environment.NewLine + "CEF_MV3_RUNTIME_ID=" + mv3Id +
+                                Environment.NewLine + "CEF_MV3_POPUP_PAGE_OK=" + popupReady +
                                 Environment.NewLine + "CEF_LIVE_VIEWS=" + cefForm.LiveViewCount +
                                 Environment.NewLine + "CEF_GROUP_PROCESSES=" + cefForm.ReadMemory().ProcessCount);
-                            if (!info.BrowserInitialized || !agent) Environment.ExitCode = 1;
+                            if (!info.BrowserInitialized || !agent || (extensionSmoke && (!mv3 || !mv3Worker)) ||
+                                (extensionPopupSmoke && !popupReady)) Environment.ExitCode = 1;
                         }
                         catch (Exception ex)
                         {
@@ -122,30 +178,6 @@ internal static class Program
             return Environment.ExitCode;
         }
 
-        bool smoke = args.Length==1 && args[0]=="--smoke-test";
-        string dataPath = smoke
-            ? Path.Combine(Path.GetTempPath(), "MBrowser-smoke-" + Guid.NewGuid().ToString("N"))
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FeatherBrowser");
-        using var instance = new Mutex(true, smoke ? "Local\\MBrowserSmoke-" + Guid.NewGuid() : "Local\\FeatherBrowser", out bool first);
-        if (!first)
-        {
-            if(!BrowserActivation.Send(BrowserDocuments.ParseArguments(args))) MessageBox.Show("Не удалось передать адрес открытому окну MBrowser.","MBrowser");
-            return 0;
-        }
-
-        Directory.CreateDirectory(dataPath);
-        Application.ThreadException += (_, e) => LogError(dataPath, e.Exception);
-        using var form = new MainForm(dataPath, smoke,smoke ? [] : BrowserDocuments.ParseArguments(args));
-        _ = form.Handle;
-        using var activation = smoke ? null : new BrowserActivation(targets =>
-        {
-            try { if(!form.IsDisposed && form.IsHandleCreated) form.BeginInvoke(() => form.AcceptShellTargets(targets)); }
-            catch(InvalidOperationException) when(form.IsDisposed || !form.IsHandleCreated) { }
-        });
-        if (smoke)
-            form.Shown += async (_, _) => await SmokeTests.RunAsync(form, dataPath);
-        Application.Run(form);
-        return Environment.ExitCode;
     }
 
     internal static void LogError(string dataPath, Exception error)

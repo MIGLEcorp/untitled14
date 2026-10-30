@@ -15,7 +15,7 @@ try {
     Copy-Item -LiteralPath .\README.md, .\ENGINE.md -Destination .\dist
     Copy-Item -LiteralPath .\extensions -Destination .\dist\extensions -Recurse
     Copy-Item -LiteralPath .\docs -Destination .\dist\docs -Recurse
-    if ($CustomCef154) {
+    if ($true) {
         $nativeLib = Join-Path $NativeCefDirectory 'libcef.dll'
         if (-not (Test-Path -LiteralPath $nativeLib)) { throw "Custom libcef.dll not found: $nativeLib" }
         if ((Get-Item $nativeLib).Length -lt 50MB) { throw 'Custom libcef.dll unexpectedly small' }
@@ -55,10 +55,6 @@ try {
             if (!$installedCompiler) { throw 'Install Inno Setup 6+ or place it in bin\tools\InnoSetup.' }
             $compiler = $installedCompiler.Source
         }
-        if (!(Test-Path -LiteralPath '.\bin\tools\MicrosoftEdgeWebview2Setup.exe')) {
-            Invoke-WebRequest -UseBasicParsing 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile '.\bin\tools\MicrosoftEdgeWebview2Setup.exe'
-        }
-        if ((Get-AuthenticodeSignature -LiteralPath '.\bin\tools\MicrosoftEdgeWebview2Setup.exe').Status -ne 'Valid') { throw 'WebView2 bootstrapper signature is invalid.' }
         & $compiler .\installer\MBrowser.iss
         if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }
     }

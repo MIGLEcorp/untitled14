@@ -1,7 +1,5 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using Microsoft.Web.WebView2.Core;
-using Microsoft.Web.WebView2.WinForms;
 
 namespace MBrowser;
 
@@ -26,8 +24,6 @@ internal sealed partial class MainForm : BrowserWindow
     private readonly SemaphoreSlim _transition = new(1, 1);
     private readonly SemaphoreSlim _sessionIoGate = new(1, 1);
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly Dictionary<Guid, TabRuntime> _runtimes = [];
-    private CoreWebView2Environment? _environment;
     private bool _closing;
     private readonly bool _smoke;
     private GlassPanel? _menu;
@@ -36,16 +32,14 @@ internal sealed partial class MainForm : BrowserWindow
     internal Task ReadyTask => _ready.Task;
     internal BrowserTab ActiveTab => _session.Tabs[_session.SelectedIndex];
     internal int TabCount => _session.Tabs.Count;
-    internal int LiveViewCount => _cefEngine ? _cefRuntimes.Count : _runtimes.Count;
-    internal bool IsPageLoading => _cefEngine ? (_cefRuntimes.GetValueOrDefault(ActiveTab.Id)?.Loading ?? false) : (ActiveRuntime?.Loading ?? false);
-    internal bool HasLoadingTabs => _cefEngine ? _cefRuntimes.Values.Any(r => r.Loading) : _runtimes.Values.Any(r => r.Loading);
-    private TabRuntime? ActiveRuntime => _runtimes.GetValueOrDefault(ActiveTab.Id);
-    internal CoreWebView2? ActiveCore => ActiveRuntime?.View.CoreWebView2;
+    internal int LiveViewCount => _cefRuntimes.Count;
+    internal bool IsPageLoading => _cefRuntimes.GetValueOrDefault(ActiveTab.Id)?.Loading ?? false;
+    internal bool HasLoadingTabs => _cefRuntimes.Values.Any(r => r.Loading);
 
     public MainForm(string dataPath, bool smoke, string[]? initialTargets = null,
         bool cefEngine = false, bool customCef = false)
     {
-        _cefEngine = cefEngine;
+        _cefEngine = true;
         _cefCustomLibCef = customCef;
         DataPath = dataPath;
         _smoke = smoke;
@@ -76,9 +70,7 @@ internal sealed partial class MainForm : BrowserWindow
         FullScreenChanged += UpdateChromeLayout;
         Palette.Apply(this);
 
-        _tabs.IsTabLoaded = id => _cefEngine
-            ? _cefRuntimes.TryGetValue(id, out var cef) && CefIsAlive(cef)
-            : _runtimes.TryGetValue(id, out var runtime) && runtime.View.CoreWebView2?.IsSuspended != true;
+        _tabs.IsTabLoaded = id => _cefRuntimes.TryGetValue(id, out var cef) && CefIsAlive(cef);
         _tabs.TabSelected += index => RunUi(() => SelectTabAsync(index));
         _tabs.TabClosed += index => RunUi(() => CloseTabAsync(index));
         _tabs.NewTab += () => RunUi(() => OpenTabAsync());
@@ -160,12 +152,6 @@ internal sealed partial class MainForm : BrowserWindow
         if (_cefEngine)
             foreach (int childId in CefProcessMetrics.GetDescendantIds(Environment.ProcessId))
                 ids.Add(childId);
-        if (_environment is not null)
-        {
-            try { foreach (var process in _environment.GetProcessInfos()) ids.Add(process.ProcessId); }
-            catch (COMException) { }
-            catch (InvalidOperationException) { }
-        }
         long working = 0, committed = 0;
         int count = 0;
         foreach (int id in ids)
@@ -197,10 +183,8 @@ internal sealed partial class MainForm : BrowserWindow
         Program.LogError(DataPath, ex);
         _status.Text = "Операция не выполнена: " + ex.Message;
         RefreshChrome();
-        if (!_smoke) MessageBox.Show(this,
-            ex is WebView2RuntimeNotFoundException
-                ? "Не найден Microsoft Edge WebView2 Runtime. Установите Runtime и запустите MBrowser снова."
-                : ex.Message, "MBrowser", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        if (!_smoke) MessageBox.Show(this, ex.Message, "MBrowser",
+            MessageBoxButtons.OK, MessageBoxIcon.Warning);
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)

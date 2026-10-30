@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+using CefSharp;
 
 namespace MBrowser;
 
@@ -15,16 +15,7 @@ internal sealed partial class MainForm
         _address.SelectAll();
     }
 
-    private void ShowDownloads()
-    {
-        try
-        {
-            var core = ActiveCore ?? _runtimes.Values.FirstOrDefault(r => r.DownloadCount > 0)?.View.CoreWebView2;
-            if (core is null) _status.Text = "Нет активных загрузок.";
-            else core.OpenDefaultDownloadDialog();
-        }
-        catch (Exception ex) when (ex is COMException or InvalidOperationException) { ShowError(ex); }
-    }
+    private void ShowDownloads() => ShowCefDownloads();
 
     private bool HandleShortcut(Keys keys)
     {
@@ -58,13 +49,14 @@ internal sealed partial class MainForm
         return true;
     }
 
-    protected override bool ProcessCmdKey(ref Message msg, Keys keyData) => HandleShortcut(keyData) || base.ProcessCmdKey(ref msg, keyData);
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData) =>
+        HandleShortcut(keyData) || base.ProcessCmdKey(ref msg, keyData);
 
     private bool _siteEnteredFullscreen;
-
     private void SetSiteFullscreen(bool requested)
     {
-        if (requested && !IsFullScreen) { _siteEnteredFullscreen = true; ToggleFullScreen(); }
+        if (requested && !IsFullScreen)
+        { _siteEnteredFullscreen = true; ToggleFullScreen(); }
         else if (!requested && _siteEnteredFullscreen)
         {
             _siteEnteredFullscreen = false;
@@ -74,24 +66,20 @@ internal sealed partial class MainForm
 
     private async Task ExitFullscreenAsync()
     {
-        if (ActiveCore is { ContainsFullScreenElement: true } core)
-            await core.ExecuteScriptAsync("document.exitFullscreen?.()");
+        if (_cefRuntimes.TryGetValue(ActiveTab.Id, out var runtime) &&
+            CefIsAlive(runtime) && runtime.View.CanExecuteJavascriptInMainFrame)
+        {
+            try { await runtime.View.EvaluateScriptAsync("if(document.fullscreenElement)document.exitFullscreen()"); }
+            catch (Exception error) when (error is InvalidOperationException or ObjectDisposedException)
+            { Program.LogError(DataPath, error); }
+        }
         _siteEnteredFullscreen = false;
         if (IsFullScreen) ToggleFullScreen();
     }
 
     private async Task LeaveSiteFullscreenAsync()
     {
-        try
-        {
-            if (ActiveCore is { ContainsFullScreenElement: true } core)
-                await core.ExecuteScriptAsync("document.exitFullscreen?.()");
-        }
-        catch (Exception ex) when (ex is COMException or InvalidOperationException) { }
-        if (_siteEnteredFullscreen)
-        {
-            _siteEnteredFullscreen = false;
-            if (IsFullScreen) ToggleFullScreen();
-        }
+        if (!_siteEnteredFullscreen) return;
+        await ExitFullscreenAsync();
     }
 }

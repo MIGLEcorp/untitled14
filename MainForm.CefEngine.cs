@@ -17,6 +17,7 @@ internal sealed partial class MainForm
         internal bool Loading { get; set; }
         internal string MemoryAgentScript { get; set; } = "";
         internal DateTimeOffset LastUsedUtc { get; set; } = DateTimeOffset.UtcNow;
+        internal DateTimeOffset? RestoreStartedUtc { get; set; }
     }
 
     private readonly Dictionary<Guid, CefTabRuntime> _cefRuntimes = [];
@@ -34,12 +35,20 @@ internal sealed partial class MainForm
             Dock = DockStyle.Fill,
             AccessibleName = "Chromium Embedded Framework page"
         };
+        browser.DownloadHandler = new CefDownloadsHandler(this);
+        browser.PermissionHandler = new CefPermissionsHandler(this);
+        browser.RequestHandler = new CefNavigationHandler(this, tab);
+        browser.LifeSpanHandler = new CefPopupHandler(this);
+        browser.DisplayHandler = new CefDisplayHandler(this);
+        browser.MenuHandler = new CefImageContextMenuHandler(this);
         var runtime = new CefTabRuntime(tab, browser)
         {
             Loading = true,
             MemoryAgentScript = ActivePageMemoryController.Script(_preferences)
         };
+        if (_hibernatedIds.Remove(tab.Id)) runtime.RestoreStartedUtc = DateTimeOffset.UtcNow;
         _cefRuntimes.Add(tab.Id, runtime);
+        ConfigureCefPasswordAutofill(runtime);
         _viewport.Controls.Add(browser);
         browser.BringToFront();
 
@@ -56,6 +65,12 @@ internal sealed partial class MainForm
         browser.LoadingStateChanged += (_, e) => OnUi(() =>
         {
             runtime.Loading = e.IsLoading;
+            if (!e.IsLoading && runtime.RestoreStartedUtc is { } restored)
+            {
+                _restoreCount++;
+                _restoreTotalMilliseconds += (DateTimeOffset.UtcNow - restored).TotalMilliseconds;
+                runtime.RestoreStartedUtc = null;
+            }
             // Reapply page policies once the main-frame V8 context is ready.
             // Native CEF builds can deliver FrameLoadEnd before the final
             // renderer context is able to execute injected JavaScript.
@@ -99,8 +114,16 @@ internal sealed partial class MainForm
         browser.FrameLoadEnd += (_, e) =>
         {
             if (!e.Frame.IsMain) return;
-            try { e.Frame.ExecuteJavaScriptAsync(runtime.MemoryAgentScript); }
+            try
+            {
+                e.Frame.ExecuteJavaScriptAsync(runtime.MemoryAgentScript);
+                e.Frame.ExecuteJavaScriptAsync(AutofillPageScripts.CefObserver);
+                e.Frame.ExecuteJavaScriptAsync(TabHibernationManager.ActivityTrackerScript);
+                if (tab.ScrollX > 0 || tab.ScrollY > 0)
+                    e.Frame.ExecuteJavaScriptAsync("scrollTo(" + tab.ScrollX.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," + tab.ScrollY.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")");
+            }
             catch (ObjectDisposedException) { }
+            OnUi(() => { if (tab == ActiveTab) RunUi(() => OfferCefPasswordsAsync(runtime, false)); });
         };
         browser.LoadError += (_, e) =>
         {
@@ -199,6 +222,48 @@ internal sealed partial class MainForm
             Program.LogError(DataPath, ex);
             return false;
         }
+    }
+
+    internal async Task<bool> CefExtensionSmokeReadyForTestAsync()
+    {
+        if (!_cefRuntimes.TryGetValue(ActiveTab.Id, out var current) ||
+            !CefIsAlive(current) || !current.View.CanExecuteJavascriptInMainFrame)
+            return false;
+        try
+        {
+            var response = await current.View.EvaluateScriptAsync(
+                "document.documentElement.dataset.mbrowserMv3Smoke === 'loaded'");
+            return response.Success && response.Result is true;
+        }
+        catch (Exception error) { Program.LogError(DataPath, error); return false; }
+    }
+
+    internal async Task<bool> CefExtensionWorkerReadyForTestAsync()
+    {
+        if (!_cefRuntimes.TryGetValue(ActiveTab.Id, out var current) ||
+            !CefIsAlive(current) || !current.View.CanExecuteJavascriptInMainFrame)
+            return false;
+        try
+        {
+            var response = await current.View.EvaluateScriptAsync(
+                "document.documentElement.dataset.mbrowserMv3Worker === 'ok'");
+            return response.Success && response.Result is true;
+        }
+        catch (Exception error) { Program.LogError(DataPath, error); return false; }
+    }
+
+    internal async Task<string> CefExtensionIdForTestAsync()
+    {
+        if (!_cefRuntimes.TryGetValue(ActiveTab.Id, out var current) ||
+            !CefIsAlive(current) || !current.View.CanExecuteJavascriptInMainFrame)
+            return "";
+        try
+        {
+            var response = await current.View.EvaluateScriptAsync(
+                "document.documentElement.dataset.mbrowserMv3Id || ''");
+            return response.Success ? response.Result as string ?? "" : "";
+        }
+        catch (Exception error) { Program.LogError(DataPath, error); return ""; }
     }
 
     private bool TryCefNavigate(string url)
