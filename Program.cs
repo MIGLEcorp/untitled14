@@ -87,10 +87,12 @@ internal static class Program
         bool urlSmoke = args.Length == 2 &&
             (args[0] == "--cef-url-smoke" || urlSmokeNoQuic);
         bool faceDetectionSmoke = args.Length == 1 && args[0] == "--cef-face-detection-smoke";
+        bool delayedOptimizationSmoke = args.Length == 1 && args[0] == "--cef-delayed-optimization-smoke";
         bool credentialSmoke = args.Length == 1 && args[0] == "--cef-credentials-smoke";
         bool extensionPopupSmoke = args.Length == 1 && args[0] == "--cef-extension-ui-smoke";
         bool extensionSmoke = extensionPopupSmoke || (args.Length == 1 && args[0] == "--cef-extension-smoke");
-        bool cefSmoke = chromeRuntimeSmoke || urlSmoke || faceDetectionSmoke || credentialSmoke || extensionSmoke ||
+        bool cefSmoke = chromeRuntimeSmoke || urlSmoke || faceDetectionSmoke ||
+            credentialSmoke || delayedOptimizationSmoke || extensionSmoke ||
             (args.Length == 1 && (args[0] == "--cef-smoke" || args[0] == "--smoke-test"));
         {
             bool customCef = CefMemoryFeatures.HasVerifiedCustomBuildMarker(AppContext.BaseDirectory);
@@ -101,7 +103,7 @@ internal static class Program
                     : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                         "MBrowser");
             using var cefSmokeServer = cefSmoke && !urlSmoke
-                ? new CefSmokeServer(credentialSmoke, faceDetectionSmoke) : null;
+                ? new CefSmokeServer(credentialSmoke, faceDetectionSmoke, delayedOptimizationSmoke) : null;
             string[] targets;
             if (urlSmoke)
             {
@@ -126,6 +128,13 @@ internal static class Program
             if (!cefSmoke && !isolatedInstall)
                 dataPathCef = UserProfileBootstrap.Prepare(dataPathCef);
             Directory.CreateDirectory(dataPathCef);
+            if (delayedOptimizationSmoke)
+            {
+                // Synthetic profile only; never change the user's preferences.
+                var prefs = BrowserPreferences.Load(dataPathCef);
+                prefs.LazyOffscreenImages = true;
+                prefs.Save(dataPathCef);
+            }
             // The previous profile is migrated and verified before CEF is initialized.
             string cefRoot = Path.Combine(dataPathCef, "CEFRuntime");
             Directory.CreateDirectory(cefRoot);
@@ -259,6 +268,8 @@ internal static class Program
                         try
                         {
                             bool agent = await cefForm.CefMemoryAgentReadyForTestAsync();
+                            bool deferredOptimizationOk = !delayedOptimizationSmoke ||
+                                await cefForm.CefDelayedOptimizationReadyForTestAsync();
                             bool mv3 = extensionSmoke && await cefForm.CefExtensionSmokeReadyForTestAsync();
                             bool mv3Worker = extensionSmoke && await cefForm.CefExtensionWorkerReadyForTestAsync();
                             string mv3Id = extensionSmoke ? await cefForm.CefExtensionIdForTestAsync() : "";
@@ -277,6 +288,7 @@ internal static class Program
                                 + Environment.NewLine + "CEF_URL_SMOKE=" + urlSmoke +
                                 Environment.NewLine + "CEF_FACE_DETECTION_RESULT=" + faceDetectionResult +
                                 Environment.NewLine + "CEF_MEMORY_AGENT_LOADED=" + agent +
+                                Environment.NewLine + "CEF_OPTIMIZATION_DEFERRED_OK=" + deferredOptimizationOk +
                                 Environment.NewLine + "CEF_MV3_CONTENT_SCRIPT_LOADED=" + mv3 +
                                 Environment.NewLine + "CEF_MV3_WORKER_MESSAGE_OK=" + mv3Worker +
                                 Environment.NewLine + "CEF_MV3_RUNTIME_ID=" + mv3Id +
@@ -288,7 +300,7 @@ internal static class Program
                                 Environment.NewLine + "CEF_LOGIN_BRIDGE_DIAGNOSTICS=" + (credentialSmoke ? await cefForm.CefCredentialDiagnosticsForTestAsync() : "not tested") +
                                 Environment.NewLine + "CEF_LIVE_VIEWS=" + cefForm.LiveViewCount +
                                 Environment.NewLine + "CEF_GROUP_PROCESSES=" + cefForm.ReadMemory().ProcessCount);
-                            smokeExitCode = (!info.BrowserInitialized || !agent ||
+                            smokeExitCode = (!info.BrowserInitialized || !agent || !deferredOptimizationOk ||
                                 (extensionSmoke && (!mv3 || !mv3Worker)) ||
                                 (extensionPopupSmoke && !popupReady) ||
                                 (credentialSmoke && cefForm.CefLoginBridgeMessagesForTest == 0) ||

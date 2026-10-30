@@ -19,6 +19,10 @@ internal sealed partial class MainForm
         internal CefNavigationHandler NavigationHandler { get; } = navigationHandler;
         internal bool MainFrameReady { get; set; }
         internal long MainFrameStartedTimestamp { get; set; }
+        // Incremented before every main-frame document load; invalidates old delays.
+        internal int NavigationEpoch;
+        internal int OptimizationsScheduledEpoch = -1;
+        internal int OptimizationsAppliedEpoch = -1;
         internal bool Loading { get; set; }
         internal string MemoryAgentScript { get; set; } = "";
         internal DateTimeOffset LastUsedUtc { get; set; } = DateTimeOffset.UtcNow;
@@ -91,16 +95,10 @@ internal sealed partial class MainForm
                 _restoreTotalMilliseconds += (DateTimeOffset.UtcNow - restored).TotalMilliseconds;
                 runtime.RestoreStartedUtc = null;
             }
-            // Reapply page policies once the main-frame V8 context is ready.
-            // Native CEF builds can deliver FrameLoadEnd before the final
-            // renderer context is able to execute injected JavaScript.
-            if (!e.IsLoading && runtime.MemoryAgentScript.Length > 0 &&
-                runtime.View.IsBrowserInitialized && runtime.View.CanExecuteJavascriptInMainFrame)
-            {
-                try { runtime.View.ExecuteScriptAsync(runtime.MemoryAgentScript); }
-                catch (ObjectDisposedException) { }
-                catch (InvalidOperationException) { }
-            }
+            // Page-level memory policies are never injected during loading.
+            // Defer until all normal CEF loading work has finished and the
+            // main frame is ready (plus a short quiet period for first paint).
+            if (!e.IsLoading) ScheduleCefOptimizationsAfterLoad(runtime);
             if (tab == ActiveTab)
             {
                 _status.Text = e.IsLoading
@@ -129,15 +127,13 @@ internal sealed partial class MainForm
         browser.FrameLoadStart += (_, e) =>
         {
             if (!e.Frame.IsMain) return;
+            Interlocked.Increment(ref runtime.NavigationEpoch);
             runtime.MainFrameReady = false;
+            runtime.OptimizationsScheduledEpoch = -1;
             runtime.MainFrameStartedTimestamp = Stopwatch.GetTimestamp();
             if (runtime.NavigationHandler.ResourceTracingEnabled)
                 _ = LogPendingResourcesAfterDelayAsync(runtime);
-            if (runtime.MemoryAgentScript.Length > 0)
-            {
-                try { e.Frame.ExecuteJavaScriptAsync(runtime.MemoryAgentScript); }
-                catch (ObjectDisposedException) { }
-            }
+            // Do not mutate the page or scan its DOM before content is ready.
         };
         // FrameLoadStart can precede V8 context creation; retry after load.
         browser.FrameLoadEnd += (_, e) =>
@@ -145,19 +141,22 @@ internal sealed partial class MainForm
             if (!e.Frame.IsMain) return;
             try
             {
-                if (runtime.MemoryAgentScript.Length > 0)
-                    e.Frame.ExecuteJavaScriptAsync(runtime.MemoryAgentScript);
+                // Credential prompts and edit safety are independent of the
+                // optional memory policies and must still work during login.
                 e.Frame.ExecuteJavaScriptAsync(AutofillPageScripts.CefObserver);
                 e.Frame.ExecuteJavaScriptAsync(TabHibernationManager.ActivityTrackerScript);
                 if (tab.ScrollX > 0 || tab.ScrollY > 0)
                     e.Frame.ExecuteJavaScriptAsync("scrollTo(" + tab.ScrollX.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," + tab.ScrollY.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")");
             }
             catch (ObjectDisposedException) { }
+            int completedEpoch = Volatile.Read(ref runtime.NavigationEpoch);
             var frameElapsed = runtime.MainFrameStartedTimestamp == 0
                 ? TimeSpan.Zero : Stopwatch.GetElapsedTime(runtime.MainFrameStartedTimestamp);
             OnUi(() =>
             {
+                if (completedEpoch != Volatile.Read(ref runtime.NavigationEpoch)) return;
                 runtime.MainFrameReady = true;
+                ScheduleCefOptimizationsAfterLoad(runtime);
                 _ = RecordCefNavigationTimingAsync(runtime, frameElapsed, "main-frame-ready");
                 if (tab == ActiveTab)
                 {
@@ -176,6 +175,58 @@ internal sealed partial class MainForm
             if (HandleShortcut(e.KeyData)) e.Handled = e.SuppressKeyPress = true;
         };
         return runtime;
+    }
+
+    /// <summary>
+    /// Defer optional DOM/memory policies until the main document and CEF load
+    /// have finished. A new navigation invalidates an outstanding activation.
+    /// </summary>
+    private void ScheduleCefOptimizationsAfterLoad(CefTabRuntime runtime)
+    {
+        if (!CefIsAlive(runtime) || runtime.Loading || !runtime.MainFrameReady ||
+            runtime.MemoryAgentScript.Length == 0) return;
+
+        int epoch = Volatile.Read(ref runtime.NavigationEpoch);
+        if (epoch == 0 || runtime.OptimizationsAppliedEpoch == epoch ||
+            runtime.OptimizationsScheduledEpoch == epoch) return;
+
+        runtime.OptimizationsScheduledEpoch = epoch;
+        _ = ActivateCefOptimizationsAfterQuietPeriodAsync(runtime, epoch);
+    }
+
+    private async Task ActivateCefOptimizationsAfterQuietPeriodAsync(
+        CefTabRuntime runtime, int epoch)
+    {
+        // Let final layout and first paint settle before scanning/observing DOM.
+        await Task.Delay(750);
+        DispatchCefUi(() =>
+        {
+            if (!CefIsAlive(runtime) || Volatile.Read(ref runtime.NavigationEpoch) != epoch)
+                return Task.CompletedTask;
+            if (runtime.Loading || !runtime.MainFrameReady ||
+                runtime.MemoryAgentScript.Length == 0)
+            {
+                runtime.OptimizationsScheduledEpoch = -1;
+                return Task.CompletedTask;
+            }
+            if (!runtime.View.IsBrowserInitialized ||
+                !runtime.View.CanExecuteJavascriptInMainFrame)
+            {
+                runtime.OptimizationsScheduledEpoch = -1;
+                return Task.CompletedTask;
+            }
+            try
+            {
+                runtime.View.ExecuteScriptAsync(runtime.MemoryAgentScript);
+                runtime.OptimizationsAppliedEpoch = epoch;
+            }
+            catch (Exception error) when (error is ObjectDisposedException or InvalidOperationException)
+            {
+                runtime.OptimizationsScheduledEpoch = -1;
+                Program.LogError(DataPath, error);
+            }
+            return Task.CompletedTask;
+        });
     }
 
     private void RecordSlowCefNavigation(string? url, TimeSpan elapsed)
@@ -333,6 +384,40 @@ internal sealed partial class MainForm
             _cefRuntimes.Count);
     }
 
+    internal async Task<bool> CefDelayedOptimizationReadyForTestAsync()
+    {
+        if (!_cefRuntimes.TryGetValue(ActiveTab.Id, out var runtime) ||
+            !CefIsAlive(runtime) || !runtime.View.CanExecuteJavascriptInMainFrame)
+            return false;
+        try
+        {
+            // The loopback page records parse-time and window.load states.
+            // The memory agent must only appear after the CEF loading state
+            // becomes idle and after the additional first-paint delay.
+            var result = await runtime.View.EvaluateScriptAsync(
+                "JSON.stringify({parse:document.documentElement.dataset.memoryAgentAtParse," +
+                "load:document.documentElement.dataset.memoryAgentAtLoad," +
+                "slow:globalThis.__mbrowserSlowResourceFinished===true," +
+                "active:typeof globalThis.__mbrowser_memory_lab_agent_v1?.configure==='function'})");
+            if (!result.Success || result.Result is not string json)
+                return false;
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            bool good = root.GetProperty("parse").GetString() == "false" &&
+                root.GetProperty("load").GetString() == "false" &&
+                root.GetProperty("slow").GetBoolean() &&
+                root.GetProperty("active").GetBoolean();
+            File.WriteAllText(Path.Combine(DataPath, "cef-deferred-optimizations.txt"), json);
+            return good;
+        }
+        catch (Exception error) when (error is JsonException or IOException or
+            UnauthorizedAccessException or InvalidOperationException or ObjectDisposedException)
+        {
+            Program.LogError(DataPath, error);
+            return false;
+        }
+    }
+
     internal async Task<bool> CefMemoryAgentReadyForTestAsync()
     {
         if (!_cefEngine || !_cefRuntimes.TryGetValue(ActiveTab.Id, out var runtime) ||
@@ -441,15 +526,24 @@ internal sealed partial class MainForm
     {
         bool enable = _smoke || ActivePageMemoryController.HasEnabledPolicies(_preferences);
         string script = enable ? ActivePageMemoryController.Script(_preferences) : "";
-        string update = enable ? script : ActivePageMemoryController.LiveUpdate(_preferences);
+        string suspend = ActivePageMemoryController.LiveUpdate(_preferences);
         foreach (var runtime in _cefRuntimes.Values)
         {
             if (!CefIsAlive(runtime)) continue;
             runtime.MemoryAgentScript = script;
-            if (runtime.View.IsBrowserInitialized)
+            runtime.OptimizationsAppliedEpoch = -1;
+            runtime.OptimizationsScheduledEpoch = -1;
+            // Never apply optimization changes while a document is loading.
+            if (runtime.Loading || !runtime.MainFrameReady ||
+                !runtime.View.IsBrowserInitialized ||
+                !runtime.View.CanExecuteJavascriptInMainFrame) continue;
+            if (enable) ScheduleCefOptimizationsAfterLoad(runtime);
+            else
             {
-                try { runtime.View.ExecuteScriptAsync(update); }
-                catch (ObjectDisposedException) { }
+                // Deactivate an existing agent in an already loaded page.
+                try { runtime.View.ExecuteScriptAsync(suspend); }
+                catch (Exception error) when (error is ObjectDisposedException or InvalidOperationException)
+                { Program.LogError(DataPath, error); }
             }
         }
     }

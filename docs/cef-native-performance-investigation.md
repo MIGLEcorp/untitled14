@@ -68,3 +68,40 @@ RC9 should not be advertised as a full speed fix or stable release
 without the native optimized build and verification.
 
 Working installed MBrowser profile was not wiped or reset.
+
+## Deferred optimization activation in RC9
+
+Starting with RC9, optional JavaScript/DOM memory policies are **not**
+injected in `FrameLoadStart` or `FrameLoadEnd`. They are scheduled only
+after both `LoadingStateChanged(IsLoading=false)` and main-frame readiness.
+The browser waits another 750 ms to allow the final paint to settle.
+Every main-frame navigation increments an epoch, canceling stale pending
+activations, and reapplying user settings respects the loading state.
+Controls that are disabled add no document agent. Credential autofill and
+safe-tab-hibernation input tracking remain independent of these optional
+optimizations.
+
+A deterministic `--cef-delayed-optimization-smoke` uses a loopback
+page with a 1.8-second blocking script and checks:
+`parse=false, load=false, slow=true, active=true`. Test passed.
+All 41 core tests passed.
+
+The native prepaint/tile/decoded-image feature flags are **process-wide**.
+They cannot be dynamically disabled during one tab load; restart CEF to
+change those native feature flags. The user's current preferences leave
+these experimental native features disabled.
+
+## Optimized native build preparation
+
+At `C:\src\cef154\chromium\src\out\Release_GN_x64\args.gn`,
+both `dcheck_always_on=false` and
+`enable_expensive_dchecks=false` have been configured. Original GN
+args were saved as `args.gn.before-native-perf-fix-20261030`.
+GN generation succeeded with 34,120 targets using:
+`DEPOT_TOOLS_WIN_TOOLCHAIN=0`, `GYP_MSVS_VERSION=2022`,
+`GYP_MSVS_OVERRIDE_PATH=C:\BuildTools`, and
+`vs2022_install=C:\BuildTools`.
+
+The existing `libcef.dll` is **not** optimized until Ninja completes
+all required compilation and linking steps. RC9 currently packages the
+previously verified CEF 154 DLL with the RC8 crash guard.

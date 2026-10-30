@@ -10,11 +10,22 @@ internal sealed class CefSmokeServer : IDisposable
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource _stop = new();
     private readonly byte[] _response;
+    private readonly bool _delayedOptimizationPage;
     internal string Url { get; }
 
-    internal CefSmokeServer(bool loginPage = false, bool faceDetectionPage = false)
+    internal CefSmokeServer(bool loginPage = false, bool faceDetectionPage = false,
+        bool delayedOptimizationPage = false)
     {
-        string html = faceDetectionPage
+        _delayedOptimizationPage = delayedOptimizationPage;
+        string html = delayedOptimizationPage
+            ? "<!doctype html><html><head><title>Deferred optimization smoke</title>"
+              + "<script>document.documentElement.dataset.memoryAgentAtParse="
+              + "String(!!globalThis.__mbrowser_memory_lab_agent_v1);"
+              + "window.addEventListener('load',()=>{document.documentElement.dataset.memoryAgentAtLoad="
+              + "String(!!globalThis.__mbrowser_memory_lab_agent_v1);});</script>"
+              + "<script src='/slow.js'></script></head><body><img src='/image.png'>"
+              + "<p>Deferred policy smoke</p></body></html>"
+            : faceDetectionPage
             ? "<!doctype html><html><head><title>MBrowser FaceDetector smoke</title></head><body><p>FaceDetector test</p><script>"
               + "(async()=>{const root=document.documentElement;try{if(typeof FaceDetector!=='function'){root.dataset.faceDetectionSmoke='unsupported';return;}"
               + "const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;"
@@ -60,7 +71,23 @@ internal sealed class CefSmokeServer : IDisposable
                 byte[] request = new byte[2048];
                 int received = await stream.ReadAsync(request, _stop.Token);
                 if (received == 0) return;
-                await stream.WriteAsync(_response, _stop.Token);
+                string line = Encoding.ASCII.GetString(request, 0, received);
+                if (_delayedOptimizationPage && line.StartsWith("GET /slow.js ", StringComparison.Ordinal))
+                {
+                    await Task.Delay(1800, _stop.Token);
+                    byte[] jsBody = Encoding.UTF8.GetBytes("window.__mbrowserSlowResourceFinished=true;");
+                    byte[] jsHeader = Encoding.ASCII.GetBytes(
+                        $"HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: {jsBody.Length}\r\nConnection: close\r\n\r\n");
+                    await stream.WriteAsync(jsHeader, _stop.Token);
+                    await stream.WriteAsync(jsBody, _stop.Token);
+                }
+                else if (_delayedOptimizationPage && line.StartsWith("GET /image.png ", StringComparison.Ordinal))
+                {
+                    byte[] header = Encoding.ASCII.GetBytes(
+                        "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                    await stream.WriteAsync(header, _stop.Token);
+                }
+                else await stream.WriteAsync(_response, _stop.Token);
                 await stream.FlushAsync(_stop.Token);
             }
             catch (IOException) { }
