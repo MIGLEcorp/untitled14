@@ -221,7 +221,7 @@ internal static class Program
             using var cefForm = new MainForm(dataPathCef, cefSmoke, targets,
                 cefEngine: true, customCef: customCef);
             _ = cefForm.Handle;
-            using var cefActivation = cefSmoke ? null : new BrowserActivation(incoming =>
+            using var cefActivation = cefSmoke || isolatedInstall ? null : new BrowserActivation(incoming =>
             {
                 try
                 {
