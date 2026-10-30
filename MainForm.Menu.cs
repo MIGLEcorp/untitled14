@@ -42,8 +42,18 @@ internal sealed partial class MainForm
             rows("Открыть файл…", OpenDocument);
             rows(IsFullScreen ? "Выйти из полного экрана" : "Полный экран", ToggleFullScreen);
             rows("Закладки", ShowBookmarks);
-            rows("Пароли", ShowPasswords);
+            rows("Пароли MBrowser (Windows DPAPI)", ShowPasswords);
+            rows("Менеджер Chromium · эксперимент: " +
+                (_preferences.ExperimentalChromePasswordManager ? "вкл" : "выкл"), () =>
+            {
+                _preferences.ExperimentalChromePasswordManager = !_preferences.ExperimentalChromePasswordManager;
+                _preferences.Save(DataPath);
+                _status.Text = "Нужен перезапуск MBrowser для переключения режима Chromium.";
+            });
+            if (_preferences.ExperimentalChromePasswordManager)
+                rows("Открыть встроенный менеджер Chromium", ShowNativeChromiumPasswordManager);
             rows("Импорт данных…", ShowImport);
+            rows("Перенос со старого WebView2  ›", ShowCefMigrationNotice);
             rows("Загрузки", ShowDownloads);
             rows("Оформление  ›", ShowThemeMenu);
             rows("Браузер по умолчанию…", BrowserRegistration.OpenSettings);

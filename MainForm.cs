@@ -87,6 +87,8 @@ internal sealed partial class MainForm : BrowserWindow
             {
                 await TransitionAsync(() => ShowActiveTabAsync());
                 _ready.TrySetResult();
+                if (!_smoke && CefMigrationNotice.NeedsNotice(DataPath))
+                    BeginInvoke((Action)ShowCefMigrationNotice);
             }
             catch (Exception ex) { _ready.TrySetException(ex); ShowError(ex); }
             _idleTimer.Start();

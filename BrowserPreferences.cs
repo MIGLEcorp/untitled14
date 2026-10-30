@@ -8,6 +8,7 @@ internal sealed class BrowserPreferences
     public int UnloadAfterMinutes { get; set; } = 5;
     public MemoryMode MemoryMode { get; set; } = MemoryMode.Balanced;
     public bool HardwareAcceleration { get; set; } = true;
+    public bool ExperimentalChromePasswordManager { get; set; } = false;
     public bool AutomaticHibernate { get; set; } = true;
     // Opt-in active-page/CEF memory features. All default to disabled.
     public bool LazyOffscreenImages { get; set; }

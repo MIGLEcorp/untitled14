@@ -23,10 +23,22 @@ internal static class CefExtensionRegistry
         try
         {
             var list = JsonSerializer.Deserialize<List<CefExtensionEntry>>(File.ReadAllText(path)) ?? [];
-            return list.Where(item => IsAllowedFolder(root, item.Folder) &&
-                File.Exists(Path.Combine(item.Folder, "manifest.json")))
-                .Select(item => item with { Id = CefExtensionIdentity.FromFolder(item.Folder) })
-                .ToArray();
+            var valid = new List<CefExtensionEntry>();
+            foreach (var item in list)
+            {
+                try
+                {
+                    if (item is null || string.IsNullOrWhiteSpace(item.Folder) ||
+                        !IsAllowedFolder(root, item.Folder)) continue;
+                    if (!File.Exists(Path.Combine(item.Folder, "manifest.json"))) continue;
+                    _ = ExtensionPackage.Read(item.Folder);
+                    valid.Add(item with { Id = CefExtensionIdentity.FromFolder(item.Folder) });
+                }
+                catch (Exception error) when (error is JsonException or FormatException or
+                    InvalidDataException or IOException or UnauthorizedAccessException or
+                    ArgumentException or InvalidOperationException or KeyNotFoundException) { /* Skip invalid packages; keep the other extensions. */ }
+            }
+            return valid;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
         { return []; }
@@ -36,10 +48,22 @@ internal static class CefExtensionRegistry
     {
         try
         {
-            return Path.GetFullPath(path).StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) +
-                Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+            string normalized = Path.GetFullPath(path);
+            if (!normalized.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) +
+                Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return false;
+            // A junction/symlink inside the extension store must not redirect
+            // Chromium into user documents or another part of the filesystem.
+            string current = root;
+            foreach (var segment in Path.GetRelativePath(root, normalized)
+                .Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+            {
+                current = Path.Combine(current, segment);
+                if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                    return false;
+            }
+            return true;
         }
-        catch (Exception error) when (error is ArgumentException or NotSupportedException) { return false; }
+        catch (Exception error) when (error is ArgumentException or NotSupportedException or IOException or UnauthorizedAccessException) { return false; }
     }
 
     internal static string EnabledPaths(string profile)

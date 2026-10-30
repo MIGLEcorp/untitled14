@@ -103,6 +103,31 @@ public static class CoreTests
                     "Keyed Chromium extension ID changed with its folder");
             });
 
+            Check("Native Chromium password manager is disabled by default", () =>
+            {
+                string profile = Path.Combine(folder, "native-chrome-optin");
+                Directory.CreateDirectory(profile);
+                Assert(!BrowserPreferences.Load(profile).ExperimentalChromePasswordManager,
+                    "Experimental Chrome credentials engine enabled unexpectedly");
+                var preferences = BrowserPreferences.Load(profile);
+                preferences.ExperimentalChromePasswordManager = true;
+                preferences.Save(profile);
+                Assert(BrowserPreferences.Load(profile).ExperimentalChromePasswordManager,
+                    "Opt-in Chrome runtime setting did not persist");
+            });
+
+            Check("CEF migration guidance never opens the legacy profile", () =>
+            {
+                string profile = Path.Combine(folder, "cef-migration-profile");
+                Directory.CreateDirectory(profile);
+                Assert(!CefMigrationNotice.NeedsNotice(profile), "Fresh profile should not prompt migration");
+                Directory.CreateDirectory(Path.Combine(profile, "WebView2"));
+                Assert(CefMigrationNotice.NeedsNotice(profile), "Legacy profile should prompt migration");
+                CefMigrationNotice.Dismiss(profile);
+                Assert(!CefMigrationNotice.NeedsNotice(profile), "Dismissed migration prompt reappeared");
+                Assert(Directory.Exists(Path.Combine(profile, "WebView2")), "Legacy profile was modified");
+            });
+
             Check("CEF extension registry safely installs, disables and lists packages", () =>
             {
                 string source = Path.Combine(folder, "cef-extension-source");
@@ -119,6 +144,15 @@ public static class CoreTests
                 CefExtensionRegistry.Save(profile, [installed with { Enabled = false }]);
                 Assert(CefExtensionRegistry.EnabledPaths(profile) == "",
                     "Disabled extension was still passed to CEF at startup");
+                // A broken third-party package must not take the browser down.
+                File.WriteAllText(Path.Combine(installed.Folder, "manifest.json"),
+                    "{ \"manifest_version\":3, \"name\":\"Damaged\"");
+                Assert(CefExtensionRegistry.Read(profile).Count == 0,
+                    "Invalid extension manifest was not quarantined");
+                File.WriteAllText(Path.Combine(installed.Folder, "manifest.json"),
+                    "{\"manifest_version\":3,\"name\":\"Registry Test\",\"version\":\"1.0\"}");
+                Assert(CefExtensionRegistry.Read(profile).Count == 1,
+                    "Valid extension was not restored after manifest repair");
             });
 
             Check("Address parsing: domains, ports, loopback and Unicode", () =>

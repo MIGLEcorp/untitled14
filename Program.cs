@@ -34,10 +34,11 @@ internal static class Program
         }
 
         // CEF-only: WebView2 has been removed from the production executable.
+        bool chromeRuntimeSmoke = args.Length == 1 && args[0] == "--cef-chrome-runtime-smoke";
         bool credentialSmoke = args.Length == 1 && args[0] == "--cef-credentials-smoke";
         bool extensionPopupSmoke = args.Length == 1 && args[0] == "--cef-extension-ui-smoke";
         bool extensionSmoke = extensionPopupSmoke || (args.Length == 1 && args[0] == "--cef-extension-smoke");
-        bool cefSmoke = credentialSmoke || extensionSmoke ||
+        bool cefSmoke = chromeRuntimeSmoke || credentialSmoke || extensionSmoke ||
             (args.Length == 1 && (args[0] == "--cef-smoke" || args[0] == "--smoke-test"));
         {
             bool customCef = CefMemoryFeatures.HasVerifiedCustomBuildMarker(AppContext.BaseDirectory);
@@ -102,12 +103,14 @@ internal static class Program
                     """<!doctype html><html><head><title>MBrowser MV3 popup</title></head><body><div id="mbrowser-popup-smoke">popup-ok</div></body></html>""");
                 CefExtensionRegistry.Add(dataPathCef, source);
             }
+            var cefPrefs = BrowserPreferences.Load(dataPathCef);
             var cefSettings = new CefSharp.WinForms.CefSettings
             {
                 RootCachePath = cefRoot,
                 CachePath = cefCache
             };
-            var cefPrefs = BrowserPreferences.Load(dataPathCef);
+            if (chromeRuntimeSmoke || cefPrefs.ExperimentalChromePasswordManager)
+                CefSharp.CefSharpSettings.RuntimeStyle = CefSharp.CefRuntimeStyle.Chrome;
             if (!cefPrefs.HardwareAcceleration)
                 cefSettings.CefCommandLineArgs["disable-gpu"] = "";
             // Unpacked Chromium extensions: CEF 154 may not expose the full
@@ -118,8 +121,49 @@ internal static class Program
             string cefFeatures = CefMemoryFeatures.CommandLine(cefPrefs, customCef);
             if (cefFeatures.Length > 0)
                 cefSettings.CefCommandLineArgs["enable-features"] = cefFeatures;
-            if (!CefSharp.Cef.Initialize(cefSettings))
-                throw new InvalidOperationException("Chromium CEF failed to initialize.");
+            // A cold CEF process can be slow while Windows verifies native DLLs.
+            // Show real startup status before the synchronous native load.
+            using var startup = cefSmoke ? null : new Form
+            {
+                Text = "MBrowser · запуск Chromium",
+                Width = 420, Height = 145, StartPosition = FormStartPosition.CenterScreen,
+                FormBorderStyle = FormBorderStyle.FixedDialog, ControlBox = false,
+                ShowInTaskbar = false, TopMost = true
+            };
+            if (startup is not null)
+            {
+                startup.Controls.Add(new ProgressBar
+                {
+                    Dock = DockStyle.Bottom, Height = 12,
+                    Style = ProgressBarStyle.Marquee, MarqueeAnimationSpeed = 28
+                });
+                startup.Controls.Add(new Label
+                {
+                    Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter,
+                    Text = "Загружается Chromium CEF 154…"
+                });
+                startup.Show();
+                startup.Refresh();
+                Application.DoEvents();
+            }
+            var startupWatch = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                if (!CefSharp.Cef.Initialize(cefSettings))
+                    throw new InvalidOperationException("Chromium CEF failed to initialize.");
+                if (!cefSmoke)
+                {
+                    try
+                    {
+                        File.WriteAllText(Path.Combine(dataPathCef, "cef-last-startup.txt"),
+                            "CEF native initialization: " + startupWatch.ElapsedMilliseconds +
+                            " ms" + Environment.NewLine + "Version: 154");
+                    }
+                    catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                    { LogError(dataPathCef, error); }
+                }
+            }
+            finally { startup?.Close(); }
             Application.ThreadException += (_, e) => LogError(dataPathCef, e.Exception);
             using var cefForm = new MainForm(dataPathCef, cefSmoke, targets,
                 cefEngine: true, customCef: customCef);
@@ -151,6 +195,8 @@ internal static class Program
                             string mv3Id = extensionSmoke ? await cefForm.CefExtensionIdForTestAsync() : "";
                             bool popupReady = extensionPopupSmoke &&
                                 await cefForm.CefExtensionPopupReadyForTestAsync(mv3Id);
+                            string nativePasswordUi = chromeRuntimeSmoke ?
+                                await cefForm.CefNativePasswordUiForTestAsync() : "not tested";
                             var info = cefForm.CefDiagnosticsForTest();
                             File.WriteAllText(Path.Combine(dataPathCef, "cef-smoke.txt"),
                                 "CEF_WINDOW_SHOWN=" + cefForm.IsHandleCreated +
@@ -162,6 +208,7 @@ internal static class Program
                                 Environment.NewLine + "CEF_MV3_WORKER_MESSAGE_OK=" + mv3Worker +
                                 Environment.NewLine + "CEF_MV3_RUNTIME_ID=" + mv3Id +
                                 Environment.NewLine + "CEF_MV3_POPUP_PAGE_OK=" + popupReady +
+                                Environment.NewLine + "CEF_NATIVE_PASSWORD_UI=" + nativePasswordUi +
                                 Environment.NewLine + "CEF_LOGIN_BRIDGE_MESSAGES=" + cefForm.CefLoginBridgeMessagesForTest +
                                 Environment.NewLine + "CEF_RAW_JS_MESSAGES=" + cefForm.CefRawJsMessagesForTest +
                                 Environment.NewLine + "CEF_RAW_JS_MESSAGE_INFO=" + cefForm.CefRawJsMessageInfoForTest +

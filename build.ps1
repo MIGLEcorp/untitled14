@@ -5,6 +5,19 @@ Push-Location $PSScriptRoot
 try {
     $target = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'dist'))
     if ($target -ne ([IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\') + '\dist')) { throw 'Unexpected output path.' }
+    # Validate the native build before touching the last-known-good staged output.
+    $nativeLibPreflight = Join-Path $NativeCefDirectory 'libcef.dll'
+    if (-not (Test-Path -LiteralPath $nativeLibPreflight) -or
+        (Get-Item -LiteralPath $nativeLibPreflight).Length -lt 50MB) {
+        throw 'Custom CEF 154 build is missing or incomplete; previous dist was preserved.'
+    }
+    $live = @(Get-CimInstance Win32_Process -Filter "name='MBrowser.exe'" |
+        Where-Object { $_.ExecutablePath -and
+            [IO.Path]::GetFullPath($_.ExecutablePath).Equals(
+                (Join-Path $target 'MBrowser.exe'), [StringComparison]::OrdinalIgnoreCase) })
+    if ($live.Count -gt 0) {
+        throw 'A browser is running from dist. Close only that test instance before staging; installed MBrowser was not affected.'
+    }
     if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
     dotnet publish .\MBrowser.csproj -c Release -r win-x64 --self-contained true -o .\dist --nologo
     if ($LASTEXITCODE -ne 0) { throw 'MBrowser publish failed.' }
