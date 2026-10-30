@@ -1,0 +1,106 @@
+diff --git a/base/test/fake_iasync_operation_win.h b/base/test/fake_iasync_operation_win.h
+index b977146171..e872ed8cbd 100644
+--- a/base/test/fake_iasync_operation_win.h
++++ b/base/test/fake_iasync_operation_win.h
+@@ -64,6 +64,14 @@ class FakeIAsyncOperation final
+       final {
+     NOTREACHED();
+   }
++
++  // Simulates a different interface pointer being supplied to the completion
++  // callback. The alternate operation is used only by unit tests.
++  void SetCompletionCallbackOperationForTesting(
++      ABI::Windows::Foundation::IAsyncOperation<T>* operation) {
++    completion_callback_operation_ = operation;
++  }
++
+   IFACEMETHODIMP GetResults(internal::AsyncOperationAbi<T>* results) final {
+     if (!is_complete_) {
+       ADD_FAILURE() << "GetResults called on incomplete IAsyncOperation.";
+@@ -141,10 +149,16 @@ class FakeIAsyncOperation final
+            "completed IAsyncOperation.";
+     is_complete_ = true;
+     if (handler_) {
+-      handler_->Invoke(this, status_);
++      auto* operation =
++          completion_callback_operation_
++              ? completion_callback_operation_.Get()
++              : static_cast<ABI::Windows::Foundation::IAsyncOperation<T>*>(this);
++      handler_->Invoke(operation, status_);
+     }
+   }
+ 
++  Microsoft::WRL::ComPtr<ABI::Windows::Foundation::IAsyncOperation<T>>
++      completion_callback_operation_;
+   HRESULT error_code_ = S_OK;
+   Microsoft::WRL::ComPtr<
+       ABI::Windows::Foundation::IAsyncOperationCompletedHandler<T>>
+diff --git a/base/win/post_async_results.h b/base/win/post_async_results.h
+index 70e132c0b9..315149a38e 100644
+--- a/base/win/post_async_results.h
++++ b/base/win/post_async_results.h
+@@ -329,7 +329,11 @@ HRESULT PostAsyncResults(
+              base::OnceCallback<void(internal::AsyncResultsT<T>)> callback,
+              internal::IAsyncOperationT<T>* async_operation,
+              AsyncStatus async_status) {
+-            DCHECK(original_async_operation.Get() == async_operation);
++            // COM may marshal the same WinRT operation through a different
++            // interface pointer for the completion callback. The captured
++            // pointer keeps the original operation alive; use the callback's
++            // interface to retrieve results on the callback's apartment.
++            DCHECK(async_operation);
+             if (async_status != AsyncStatus::Completed) {
+               VLOG(2) << "Got unexpected AsyncStatus: "
+                       << internal::ToCString(async_status);
+diff --git a/base/win/post_async_results_unittest.cc b/base/win/post_async_results_unittest.cc
+index f6627881cf..40d3c7b197 100644
+--- a/base/win/post_async_results_unittest.cc
++++ b/base/win/post_async_results_unittest.cc
+@@ -371,6 +371,39 @@ TYPED_TEST_P(PostAsyncResultsTest, PostAsyncResults_Success) {
+   ASSERT_EQ(templated_values.GetTestValue_AsyncResultsT(), value_received);
+ }
+ 
++TYPED_TEST_P(PostAsyncResultsTest,
++             PostAsyncResults_DifferentCompletionInterfacePointer) {
++  base::test::SingleThreadTaskEnvironment task_environment;
++  auto original_fake =
++      Microsoft::WRL::Make<FakeIAsyncOperation<TypeParam>>();
++  auto callback_fake =
++      Microsoft::WRL::Make<FakeIAsyncOperation<TypeParam>>();
++  ComPtr<IAsyncOperation<TypeParam>> original_operation;
++  ComPtr<IAsyncOperation<TypeParam>> callback_operation;
++  ASSERT_HRESULT_SUCCEEDED(original_fake.As(&original_operation));
++  ASSERT_HRESULT_SUCCEEDED(callback_fake.As(&callback_operation));
++
++  base::test::AsyncResultsTestValues<TypeParam> templated_values;
++  callback_fake->CompleteWithResults(templated_values.GetTestValue_T());
++  original_fake->SetCompletionCallbackOperationForTesting(callback_operation.Get());
++
++  RunLoop run_loop;
++  auto quit_closure = run_loop.QuitClosure();
++  auto value_received = templated_values.GetDefaultValue_AsyncResultsT();
++  ASSERT_HRESULT_SUCCEEDED(PostAsyncResults(
++      original_operation,
++      base::BindLambdaForTesting(
++          [&](internal::AsyncResultsT<TypeParam> result) {
++            value_received = result;
++            std::move(quit_closure).Run();
++          })));
++
++  ASSERT_NO_FATAL_FAILURE(
++      original_fake->CompleteWithResults(templated_values.GetTestValue_T()));
++  run_loop.Run();
++  ASSERT_EQ(templated_values.GetTestValue_AsyncResultsT(), value_received);
++}
++
+ TYPED_TEST_P(PostAsyncResultsTest, PostAsyncResults_Failure) {
+   base::test::SingleThreadTaskEnvironment task_environment;
+   auto fake_iasync_op = Microsoft::WRL::Make<FakeIAsyncOperation<TypeParam>>();
+@@ -408,6 +441,7 @@ REGISTER_TYPED_TEST_SUITE_P(
+     PostAsyncHandlers_HRESULTAndResultFailureHandler_Success,
+     PostAsyncHandlers_HRESULTAndResultFailureHandler_Failure,
+     PostAsyncResults_Success,
++    PostAsyncResults_DifferentCompletionInterfacePointer,
+     PostAsyncResults_Failure);
+ 
+ INSTANTIATE_TYPED_TEST_SUITE_P(Win,

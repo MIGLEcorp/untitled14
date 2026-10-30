@@ -83,10 +83,14 @@ internal static class Program
 
         // CEF-only: WebView2 has been removed from the production executable.
         bool chromeRuntimeSmoke = args.Length == 1 && args[0] == "--cef-chrome-runtime-smoke";
+        bool urlSmokeNoQuic = args.Length == 2 && args[0] == "--cef-url-smoke-noquic";
+        bool urlSmoke = args.Length == 2 &&
+            (args[0] == "--cef-url-smoke" || urlSmokeNoQuic);
+        bool faceDetectionSmoke = args.Length == 1 && args[0] == "--cef-face-detection-smoke";
         bool credentialSmoke = args.Length == 1 && args[0] == "--cef-credentials-smoke";
         bool extensionPopupSmoke = args.Length == 1 && args[0] == "--cef-extension-ui-smoke";
         bool extensionSmoke = extensionPopupSmoke || (args.Length == 1 && args[0] == "--cef-extension-smoke");
-        bool cefSmoke = chromeRuntimeSmoke || credentialSmoke || extensionSmoke ||
+        bool cefSmoke = chromeRuntimeSmoke || urlSmoke || faceDetectionSmoke || credentialSmoke || extensionSmoke ||
             (args.Length == 1 && (args[0] == "--cef-smoke" || args[0] == "--smoke-test"));
         {
             bool customCef = CefMemoryFeatures.HasVerifiedCustomBuildMarker(AppContext.BaseDirectory);
@@ -96,10 +100,17 @@ internal static class Program
                     ? Path.Combine(AppContext.BaseDirectory, "TestProfile")
                     : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                         "MBrowser");
-            using var cefSmokeServer = cefSmoke ? new CefSmokeServer(credentialSmoke) : null;
-            string[] targets = cefSmoke ? [cefSmokeServer!.Url] :
-                BrowserDocuments.ParseArguments(args.Length > 0 && args[0] == "--cef"
-                    ? args.Skip(1).ToArray() : args);
+            using var cefSmokeServer = cefSmoke && !urlSmoke
+                ? new CefSmokeServer(credentialSmoke, faceDetectionSmoke) : null;
+            string[] targets;
+            if (urlSmoke)
+            {
+                if (!AddressParser.TryWebUrl(args[1], out string smokeUrl)) return 2;
+                targets = [smokeUrl];
+            }
+            else if (cefSmoke) targets = [cefSmokeServer!.Url];
+            else targets = BrowserDocuments.ParseArguments(args.Length > 0 && args[0] == "--cef"
+                ? args.Skip(1).ToArray() : args);
             // Use the SAME installation mutex as v4.2.1. Never allow two versions
             // to write the shared session and preferences concurrently.
             using var mutexCef = new Mutex(true,
@@ -162,20 +173,14 @@ internal static class Program
                 RootCachePath = cefRoot,
                 CachePath = cefCache
             };
-            // Chromium's Chrome-style password-manager runtime invokes Windows Hello
-            // through chrome/browser/device_reauth/win/authenticator_win.cc. On our
-            // CEF 154 build this triggers a fatal PostAsyncResults DCHECK even when
-            // the native WebAuthn feature is disabled. Keep normal browsing in
-            // the stable Alloy runtime until a patched libcef is verified.
             if (chromeRuntimeSmoke)
                 CefSharp.CefSharpSettings.RuntimeStyle = CefSharp.CefRuntimeStyle.Chrome;
+            if (faceDetectionSmoke)
+                cefSettings.CefCommandLineArgs["enable-blink-features"] = "FaceDetector";
+            if (urlSmokeNoQuic)
+                cefSettings.CefCommandLineArgs["disable-quic"] = "";
             if (!cefPrefs.HardwareAcceleration)
                 cefSettings.CefCommandLineArgs["disable-gpu"] = "";
-            // Temporary mitigation for the fatal Windows WebAuthn DCHECK in
-            // custom CEF 154. Disable only the native Windows passkey backend.
-            // Re-enable after rebuilding libcef.dll with the thread-safe patch.
-            cefSettings.CefCommandLineArgs["disable-features"] =
-                "WebAuthenticationUseNativeWinApi";
             // Unpacked Chromium extensions: CEF 154 may not expose the full
             // Manifest V3 service-worker API. Do not claim parity without tests.
             string installedExtensions = CefExtensionRegistry.EnabledPaths(dataPathCef);
@@ -245,7 +250,8 @@ internal static class Program
             {
                 cefForm.Shown += (_, _) =>
                 {
-                    var timer = new System.Windows.Forms.Timer { Interval = 9000 };
+                    var timer = new System.Windows.Forms.Timer
+                    { Interval = faceDetectionSmoke ? 20000 : urlSmoke ? 30000 : 9000 };
                     timer.Tick += async (_, _) =>
                     {
                         timer.Stop();
@@ -260,12 +266,16 @@ internal static class Program
                                 await cefForm.CefExtensionPopupReadyForTestAsync(mv3Id);
                             string nativePasswordUi = chromeRuntimeSmoke ?
                                 await cefForm.CefNativePasswordUiForTestAsync() : "not tested";
+                            string faceDetectionResult = faceDetectionSmoke
+                                ? await cefForm.CefFaceDetectionSmokeResultForTestAsync() : "not tested";
                             var info = cefForm.CefDiagnosticsForTest();
                             File.WriteAllText(Path.Combine(dataPathCef, "cef-smoke.txt"),
                                 "CEF_WINDOW_SHOWN=" + cefForm.IsHandleCreated +
                                 Environment.NewLine + "ACTIVE_URL=" + cefForm.ActiveTab.CurrentUrl +
                                 Environment.NewLine + "CEF_RENDERER_INITIALIZED=" + info.BrowserInitialized +
-                                Environment.NewLine + "CEF_RENDERER_ADDRESS=" + info.Address +
+                                Environment.NewLine + "CEF_RENDERER_ADDRESS=" + info.Address
+                                + Environment.NewLine + "CEF_URL_SMOKE=" + urlSmoke +
+                                Environment.NewLine + "CEF_FACE_DETECTION_RESULT=" + faceDetectionResult +
                                 Environment.NewLine + "CEF_MEMORY_AGENT_LOADED=" + agent +
                                 Environment.NewLine + "CEF_MV3_CONTENT_SCRIPT_LOADED=" + mv3 +
                                 Environment.NewLine + "CEF_MV3_WORKER_MESSAGE_OK=" + mv3Worker +
@@ -281,7 +291,8 @@ internal static class Program
                             smokeExitCode = (!info.BrowserInitialized || !agent ||
                                 (extensionSmoke && (!mv3 || !mv3Worker)) ||
                                 (extensionPopupSmoke && !popupReady) ||
-                                (credentialSmoke && cefForm.CefLoginBridgeMessagesForTest == 0)) ? 1 : 0;
+                                (credentialSmoke && cefForm.CefLoginBridgeMessagesForTest == 0) ||
+                                (faceDetectionSmoke && !faceDetectionResult.StartsWith("ok:", StringComparison.Ordinal))) ? 1 : 0;
                         }
                         catch (Exception ex)
                         {

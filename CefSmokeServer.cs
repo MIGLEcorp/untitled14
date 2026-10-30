@@ -12,9 +12,18 @@ internal sealed class CefSmokeServer : IDisposable
     private readonly byte[] _response;
     internal string Url { get; }
 
-    internal CefSmokeServer(bool loginPage = false)
+    internal CefSmokeServer(bool loginPage = false, bool faceDetectionPage = false)
     {
-        string html = loginPage
+        string html = faceDetectionPage
+            ? "<!doctype html><html><head><title>MBrowser FaceDetector smoke</title></head><body><p>FaceDetector test</p><script>"
+              + "(async()=>{const root=document.documentElement;try{if(typeof FaceDetector!=='function'){root.dataset.faceDetectionSmoke='unsupported';return;}"
+              + "const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;"
+              + "const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,32,32);"
+              + "const detector=new FaceDetector({maxDetectedFaces:1,fastMode:true});"
+              + "const faces=await detector.detect(canvas);root.dataset.faceDetectionSmoke='ok:'+faces.length;"
+              + "}catch(e){root.dataset.faceDetectionSmoke='error:'+(e.name||'Error');}})();"
+              + "</script></body></html>"
+            : loginPage
             ? "<!doctype html><html><head><title>MBrowser credential smoke</title></head><body>"
               + "<form action='/signin' method='post'><label>User <input type='text' autocomplete='username' name='username'></label>"
               + "<label>Password <input type='password' autocomplete='current-password' name='password'></label>"

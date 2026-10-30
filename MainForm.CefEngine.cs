@@ -1,6 +1,7 @@
+using System.Diagnostics;
+using System.Text.Json;
 using CefSharp;
 using CefSharp.WinForms;
-using System.Text.Json;
 
 namespace MBrowser;
 
@@ -11,10 +12,13 @@ namespace MBrowser;
 /// </summary>
 internal sealed partial class MainForm
 {
-    private sealed class CefTabRuntime(BrowserTab tab, ChromiumWebBrowser view)
+    private sealed class CefTabRuntime(BrowserTab tab, ChromiumWebBrowser view, CefNavigationHandler navigationHandler)
     {
         internal BrowserTab Tab { get; } = tab;
         internal ChromiumWebBrowser View { get; } = view;
+        internal CefNavigationHandler NavigationHandler { get; } = navigationHandler;
+        internal bool MainFrameReady { get; set; }
+        internal long MainFrameStartedTimestamp { get; set; }
         internal bool Loading { get; set; }
         internal string MemoryAgentScript { get; set; } = "";
         internal DateTimeOffset LastUsedUtc { get; set; } = DateTimeOffset.UtcNow;
@@ -39,11 +43,12 @@ internal sealed partial class MainForm
         };
         browser.DownloadHandler = new CefDownloadsHandler(this, tab.Id);
         browser.PermissionHandler = new CefPermissionsHandler(this, tab.Id);
-        browser.RequestHandler = new CefNavigationHandler(this, tab);
+        var navigationHandler = new CefNavigationHandler(this, tab);
+        browser.RequestHandler = navigationHandler;
         browser.LifeSpanHandler = new CefPopupHandler(this);
         browser.DisplayHandler = new CefDisplayHandler(this);
         browser.MenuHandler = new CefImageContextMenuHandler(this);
-        var runtime = new CefTabRuntime(tab, browser)
+        var runtime = new CefTabRuntime(tab, browser, navigationHandler)
         {
             Loading = true,
             MemoryAgentScript = ActivePageMemoryController.Script(_preferences)
@@ -73,10 +78,10 @@ internal sealed partial class MainForm
             {
                 runtime.LoadStartedUtc = null;
                 var duration = DateTimeOffset.UtcNow - loadStarted;
-                if (duration >= TimeSpan.FromSeconds(8))
+                if (duration >= TimeSpan.FromSeconds(2))
                 {
                     RecordSlowCefNavigation(runtime.View.Address, duration);
-                    _ = RecordCefNavigationTimingAsync(runtime, duration);
+                    _ = RecordCefNavigationTimingAsync(runtime, duration, "all-resources-idle");
                 }
             }
             if (!e.IsLoading && runtime.RestoreStartedUtc is { } restored)
@@ -97,7 +102,9 @@ internal sealed partial class MainForm
             }
             if (tab == ActiveTab)
             {
-                _status.Text = e.IsLoading ? "CEF: загрузка..." : "CEF: готово";
+                _status.Text = e.IsLoading
+                    ? runtime.MainFrameReady ? "CEF: страница открыта · фоновые запросы" : "CEF: загружается…"
+                    : "CEF: готово";
                 RefreshChrome();
             }
         });
@@ -121,6 +128,9 @@ internal sealed partial class MainForm
         browser.FrameLoadStart += (_, e) =>
         {
             if (!e.Frame.IsMain) return;
+            runtime.MainFrameReady = false;
+            runtime.MainFrameStartedTimestamp = Stopwatch.GetTimestamp();
+            _ = LogPendingResourcesAfterDelayAsync(runtime);
             try { e.Frame.ExecuteJavaScriptAsync(runtime.MemoryAgentScript); }
             catch (ObjectDisposedException) { }
         };
@@ -137,7 +147,18 @@ internal sealed partial class MainForm
                     e.Frame.ExecuteJavaScriptAsync("scrollTo(" + tab.ScrollX.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," + tab.ScrollY.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")");
             }
             catch (ObjectDisposedException) { }
-            OnUi(() => { if (tab == ActiveTab) RunUi(() => OfferCefPasswordsAsync(runtime, false)); });
+            var frameElapsed = runtime.MainFrameStartedTimestamp == 0
+                ? TimeSpan.Zero : Stopwatch.GetElapsedTime(runtime.MainFrameStartedTimestamp);
+            OnUi(() =>
+            {
+                runtime.MainFrameReady = true;
+                _ = RecordCefNavigationTimingAsync(runtime, frameElapsed, "main-frame-ready");
+                if (tab == ActiveTab)
+                {
+                    if (runtime.Loading) _status.Text = "CEF: страница открыта · фоновые запросы";
+                    RunUi(() => OfferCefPasswordsAsync(runtime, false));
+                }
+            });
         };
         browser.LoadError += (_, e) =>
         {
@@ -165,30 +186,60 @@ internal sealed partial class MainForm
         { Program.LogError(DataPath, error); }
     }
 
-    private async Task RecordCefNavigationTimingAsync(CefTabRuntime runtime, TimeSpan loadingElapsed)
+    private async Task LogPendingResourcesAfterDelayAsync(CefTabRuntime runtime)
     {
-        // Measure browser timing separately from CEF's IsLoading flag, which
-        // includes outstanding subresources and may greatly exceed visual load.
+        await Task.Delay(TimeSpan.FromSeconds(5));
+        // CefIsAlive accesses the UI-owned tab dictionary; marshal to the UI thread.
+        if (!IsDisposed && IsHandleCreated)
+            DispatchCefUi(() =>
+            {
+                if (CefIsAlive(runtime)) runtime.NavigationHandler.LogPendingResources();
+                return Task.CompletedTask;
+            });
+    }
+
+    private async Task RecordCefNavigationTimingAsync(
+        CefTabRuntime runtime, TimeSpan elapsed, string phase)
+    {
+        // Main-frame milestones are captured separately from CEF's all-resources
+        // idle state. Resource paths and query strings are never written to disk.
         if (!CefIsAlive(runtime) || !runtime.View.IsBrowserInitialized ||
             !runtime.View.CanExecuteJavascriptInMainFrame ||
             !Uri.TryCreate(runtime.View.Address, UriKind.Absolute, out var uri) ||
             uri.Scheme is not ("http" or "https")) return;
-        const string script = "(() => { const n = performance.getEntriesByType('navigation')[0];" +
-            "const t = v => Number.isFinite(v) ? Math.round(v) : -1;" +
+        const string script = "(() => { const n=performance.getEntriesByType('navigation')[0];" +
+            "const r=performance.getEntriesByType('resource');" +
+            "const t=v=>Number.isFinite(v)?Math.round(v):-1;" +
+            "const slow=r.filter(x=>x.duration>=1000).sort((a,b)=>b.duration-a.duration).slice(0,8).map(x=>{" +
+            "let h='unknown';try{h=new URL(x.name).host}catch{}" +
+            "return {host:h,type:x.initiatorType,ms:t(x.duration)}});" +
             "return JSON.stringify({ttfb:t(n?.responseStart),dom:t(n?.domContentLoadedEventEnd)," +
-            "onload:t(n?.loadEventEnd),now:t(performance.now())}); })()";
+            "onload:t(n?.loadEventEnd),now:t(performance.now()),resources:r.length," +
+            "bytes:r.reduce((s,x)=>s+(x.transferSize||0),0),slow}); })()";
         try
         {
             var response = await runtime.View.EvaluateScriptAsync(script);
-            if (!response.Success || response.Result is not string json || json.Length > 200) return;
+            if (!response.Success || response.Result is not string json || json.Length > 4096) return;
             using var parsed = JsonDocument.Parse(json);
             long Metric(string key) => parsed.RootElement.TryGetProperty(key, out var value) &&
-                value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out long ms) &&
-                ms is >= 0 and <= 1_000_000_000 ? ms : -1;
-            string line = $"{DateTimeOffset.UtcNow:O} host={uri.Host} " +
-                $"cef_loading_ms={loadingElapsed.TotalMilliseconds:F0} " +
-                $"ttfb_ms={Metric("ttfb")} dom_ms={Metric("dom")} " +
-                $"onload_ms={Metric("onload")} browser_elapsed_ms={Metric("now")}";
+                value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out long number) ? number : -1;
+            string slow = "";
+            if (parsed.RootElement.TryGetProperty("slow", out var slowItems) &&
+                slowItems.ValueKind == JsonValueKind.Array)
+            {
+                slow = string.Join(";", slowItems.EnumerateArray().Select(item =>
+                {
+                    string host = item.TryGetProperty("host", out var h) ? h.GetString() ?? "unknown" : "unknown";
+                    string type = item.TryGetProperty("type", out var t) ? t.GetString() ?? "unknown" : "unknown";
+                    long ms = item.TryGetProperty("ms", out var m) && m.TryGetInt64(out var value) ? value : -1;
+                    return host + ":" + type + ":" + ms;
+                }));
+            }
+            string line = $"{DateTimeOffset.UtcNow:O} phase={phase} host={uri.Host} " +
+                $"phase_ms={elapsed.TotalMilliseconds:F0} ttfb_ms={Metric("ttfb")} " +
+                $"dom_ms={Metric("dom")} onload_ms={Metric("onload")} " +
+                $"browser_elapsed_ms={Metric("now")} resources={Metric("resources")} " +
+                $"transfer_bytes={Metric("bytes")} slow=[{slow}]";
             File.AppendAllText(Path.Combine(DataPath, "cef-navigation-metrics.log"),
                 line + Environment.NewLine);
         }
@@ -246,6 +297,26 @@ internal sealed partial class MainForm
     private void DestroyAllCefViews()
     {
         foreach (var id in _cefRuntimes.Keys.ToArray()) DestroyCefView(id);
+    }
+
+    internal async Task<string> CefFaceDetectionSmokeResultForTestAsync()
+    {
+        if (!_cefEngine || !_cefRuntimes.TryGetValue(ActiveTab.Id, out var runtime) ||
+            !CefIsAlive(runtime) || !runtime.View.IsBrowserInitialized ||
+            !runtime.View.CanExecuteJavascriptInMainFrame)
+            return "no-active-javascript-browser";
+        try
+        {
+            var response = await runtime.View.EvaluateScriptAsync(
+                "document.documentElement.dataset.faceDetectionSmoke || 'pending'");
+            string result = response.Success
+                ? response.Result?.ToString() ?? "null" : "failed:" + response.Message;
+            try { File.WriteAllText(Path.Combine(DataPath, "cef-face-detection-smoke.txt"), result); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            { Program.LogError(DataPath, error); }
+            return result;
+        }
+        catch (Exception error) { return "error:" + error.GetType().Name; }
     }
 
     internal (bool BrowserInitialized, string Address, int LiveTabs) CefDiagnosticsForTest()
