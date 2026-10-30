@@ -89,7 +89,7 @@ internal sealed partial class MainForm
             Dock = DockStyle.Fill,
             RequestHandler = new CefExtensionPageRequestHandler(this, entry.Id),
             LifeSpanHandler = new CefPopupHandler(this),
-            DownloadHandler = new CefDownloadsHandler(this)
+            DownloadHandler = new CefDownloadsHandler(this, ActiveTab.Id)
         };
         panel.Controls.Add(view);
         panel.Controls.Add(close);

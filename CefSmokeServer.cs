@@ -12,9 +12,14 @@ internal sealed class CefSmokeServer : IDisposable
     private readonly byte[] _response;
     internal string Url { get; }
 
-    internal CefSmokeServer()
+    internal CefSmokeServer(bool loginPage = false)
     {
-        const string html = "<!doctype html><html><head><title>MBrowser CEF smoke</title></head><body><p>CEF smoke</p></body></html>";
+        string html = loginPage
+            ? "<!doctype html><html><head><title>MBrowser credential smoke</title></head><body>"
+              + "<form action='/signin' method='post'><label>User <input type='text' autocomplete='username' name='username'></label>"
+              + "<label>Password <input type='password' autocomplete='current-password' name='password'></label>"
+              + "<button type='submit'>Sign in</button></form></body></html>"
+            : "<!doctype html><html><head><title>MBrowser CEF smoke</title></head><body><p>CEF smoke</p></body></html>";
         byte[] body = Encoding.UTF8.GetBytes(html);
         byte[] header = Encoding.ASCII.GetBytes(
             $"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {body.Length}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n");

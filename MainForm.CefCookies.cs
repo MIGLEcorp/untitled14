@@ -44,7 +44,18 @@ internal sealed partial class MainForm
                     if (item.ExpiresUtc is { } exp) parameters["expires"] = (double)exp.ToUnixTimeMilliseconds() / 1000;
                     using var devtools = runtime.View.GetDevToolsClient();
                     var response = await devtools.ExecuteDevToolsMethodAsync("Network.setCookie", parameters);
-                    if (response.Success) applied++;
+                    // DevToolsMethodResponse.Success only means the CDP command was delivered.
+                    // Network.setCookie itself returns { success: false } for rejected cookies.
+                    bool accepted = false;
+                    if (response.Success && !string.IsNullOrWhiteSpace(response.ResponseAsJsonString))
+                    {
+                        using var cdpJson = JsonDocument.Parse(response.ResponseAsJsonString);
+                        var payload = cdpJson.RootElement;
+                        if (payload.TryGetProperty("result", out var nested)) payload = nested;
+                        accepted = payload.TryGetProperty("success", out var property)
+                            && property.ValueKind == JsonValueKind.True;
+                    }
+                    if (accepted) applied++;
                     else { skipped++; partitionFailed++; }
                     continue;
                 }

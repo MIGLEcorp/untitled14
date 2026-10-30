@@ -6,7 +6,7 @@ using System.Diagnostics;
 namespace MBrowser;
 
 /// <summary>CEF native downloads: explicit user destination, no silent untrusted paths.</summary>
-internal sealed class CefDownloadsHandler(MainForm owner) : DownloadHandler
+internal sealed class CefDownloadsHandler(MainForm owner, Guid tabId) : DownloadHandler
 {
     protected override bool OnBeforeDownload(IWebBrowser webBrowser, IBrowser browser,
         DownloadItem item, IBeforeDownloadCallback callback)
@@ -16,7 +16,7 @@ internal sealed class CefDownloadsHandler(MainForm owner) : DownloadHandler
             suggested = "download";
         var url = item.Url;
         int downloadId = item.Id;
-        owner.DispatchCefUi(async () =>
+        if (!owner.DispatchCefUi(async () =>
         {
             try
             {
@@ -34,13 +34,13 @@ internal sealed class CefDownloadsHandler(MainForm owner) : DownloadHandler
                     var folder = Path.GetDirectoryName(picker.FileName)!;
                     Directory.CreateDirectory(folder);
                     callback.Continue(picker.FileName, false);
-                    owner.CefDownloadStarted(downloadId, suggested, picker.FileName, url);
+                    owner.CefDownloadStarted(tabId, downloadId, suggested, picker.FileName, url);
                 }
             }
             catch (Exception error) { owner.CefDownloadError(error); }
             finally { callback.Dispose(); }
             await Task.CompletedTask;
-        });
+        })) callback.Dispose();
         return true;
     }
 
@@ -52,7 +52,7 @@ internal sealed class CefDownloadsHandler(MainForm owner) : DownloadHandler
         long received = item.ReceivedBytes, total = item.TotalBytes;
         owner.DispatchCefUi(() =>
         {
-            owner.CefDownloadProgress(id, received, total, complete, cancelled, interrupted);
+            owner.CefDownloadProgress(tabId, id, received, total, complete, cancelled, interrupted);
             return Task.CompletedTask;
         });
     }
@@ -60,33 +60,34 @@ internal sealed class CefDownloadsHandler(MainForm owner) : DownloadHandler
 
 internal sealed partial class MainForm
 {
-    private sealed record CefDownloadInfo(int Id, string Name, string Destination, string Url,
+    private sealed record CefDownloadInfo(Guid TabId, int Id, string Name, string Destination, string Url,
         long Received, long Total, string Status);
 
-    private readonly Dictionary<int, CefDownloadInfo> _cefDownloadList = [];
+    private readonly Dictionary<(Guid TabId, int Id), CefDownloadInfo> _cefDownloadList = [];
     internal int CefDownloadCountForTest => _cefDownloadList.Count;
 
-    internal void DispatchCefUi(Func<Task> action)
+    internal bool DispatchCefUi(Func<Task> action)
     {
         try
         {
-            if (!_closing && IsHandleCreated && !IsDisposed)
-                BeginInvoke((Action)(() => RunUi(action)));
+            if (_closing || !IsHandleCreated || IsDisposed) return false;
+            BeginInvoke((Action)(() => RunUi(action)));
+            return true;
         }
-        catch (InvalidOperationException) { }
+        catch (InvalidOperationException) { return false; }
     }
 
-    internal void CefDownloadStarted(int id, string name, string destination, string url)
+    internal void CefDownloadStarted(Guid tabId, int id, string name, string destination, string url)
     {
-        _cefDownloadList[id] = new(id, name, destination, url, 0, 0, "Загрузка");
+        _cefDownloadList[(tabId, id)] = new(tabId, id, name, destination, url, 0, 0, "Загрузка");
         _status.Text = "CEF: загружается " + name;
     }
 
-    internal void CefDownloadProgress(int id, long received, long total, bool complete, bool cancelled, bool interrupted)
+    internal void CefDownloadProgress(Guid tabId, int id, long received, long total, bool complete, bool cancelled, bool interrupted)
     {
-        if (!_cefDownloadList.TryGetValue(id, out var item)) return;
+        if (!_cefDownloadList.TryGetValue((tabId, id), out var item)) return;
         string state = complete ? "Готово" : cancelled ? "Отменено" : interrupted ? "Ошибка" : "Загрузка";
-        _cefDownloadList[id] = item with { Received = received, Total = total, Status = state };
+        _cefDownloadList[(tabId, id)] = item with { Received = received, Total = total, Status = state };
         if (complete && !string.IsNullOrWhiteSpace(item.Destination))
             _status.Text = "Сохранено: " + item.Name;
     }

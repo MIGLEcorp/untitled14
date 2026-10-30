@@ -13,7 +13,7 @@ Useful APIs for future extensions:
 - `chrome.runtime.sendMessage` / `onMessage`: messages between content scripts and the extension service worker.
 - `chrome.declarativeNetRequest`: static/dynamic request blocking and redirects, suitable for a future ad blocker.
 - `chrome.scripting`: scripts requested by an extension with the relevant permission, suitable for a future translator.
-- `chrome.permissions`: optional permissions, subject to the WebView2 runtime's extension support.
+- `chrome.permissions`: optional permissions, compatibility depends on the CEF release and API.
 
 The host's saved-password vault, profile paths and arbitrary OS APIs are **not** exposed to content scripts. Site permissions (camera, microphone, location, clipboard, notifications) are separate and prompted inside the window on demand.
 
@@ -37,9 +37,18 @@ Request only the sites and APIs actually needed. Translation providers, credenti
 
 ## Runtime limits
 
-This is the WebView2 implementation of Chromium extensions, not the complete Chrome browser UI. Chrome Store/CRX installation, browser-action toolbar popup surfaces and browser-specific UI APIs are not provided here; content scripts, storage and declarative request blocking are exercised in the real-engine smoke suite. Other APIs depend on the installed Evergreen runtime and must be tested by extension authors. Installed extensions can be disabled or removed in the internal menu.
+Extensions are loaded from unpacked folders through the Chromium extension loader
+at CEF startup. Verified in an isolated CEF renderer: Manifest V3 content script,
+background service worker, chrome.runtime messaging, chrome.storage.local, and
+chrome-extension:// popup page. Per-extension popup/options windows are available
+from the menu when the manifest declares them.
+
+This is not the complete Chrome extension experience: installation from
+Chrome Web Store and signed CRX packages, arbitrary browser-specific APIs,
+and compatibility of third-party extensions have not been comprehensively tested.
+Extensions need a restart after installation, enable, or disable.
+They depend on bundled Chromium CEF, not Microsoft Edge Evergreen.
 
 Official references:
-- https://learn.microsoft.com/dotnet/api/microsoft.web.webview2.core.corewebview2profile.addbrowserextensionasync
 - https://developer.chrome.com/docs/extensions/reference/api
 - https://developer.chrome.com/docs/extensions/reference/api/declarativeNetRequest

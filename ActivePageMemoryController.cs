@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace MBrowser;
 
 /// <summary>
-/// Conservative, opt-in active-page controls available through the installed WebView2 engine.
+/// Conservative, opt-in active-page controls executed by Chromium CEF.
 /// These are webpage-level policies, NOT replacements for Chromium's native decoded-image cache
 /// or a DOM-to-disk swap mechanism.
 /// </summary>

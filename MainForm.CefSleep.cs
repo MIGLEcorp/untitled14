@@ -22,8 +22,9 @@ internal sealed partial class MainForm
         // Per-page switches are applied by ActivePageMemoryController.
     }
 
-    private static bool CefHasProtectedActivity(CefTabRuntime runtime) =>
-        runtime.Loading;
+    private bool CefHasProtectedActivity(CefTabRuntime runtime) =>
+        runtime.Loading || _cefDownloadList.Values.Any(item =>
+            item.TabId == runtime.Tab.Id && item.Status == "Загрузка");
 
     private async Task<bool> HibernateCefTabAsync(CefTabRuntime runtime, bool manual)
     {

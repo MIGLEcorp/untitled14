@@ -5,38 +5,38 @@ using System.Text.Json;
 namespace MBrowser;
 
 /// <summary>CEF permission callbacks stay alive until the user's explicit UI choice.</summary>
-internal sealed class CefPermissionsHandler(MainForm owner) : PermissionHandler
+internal sealed class CefPermissionsHandler(MainForm owner, Guid tabId) : PermissionHandler
 {
     protected override bool OnShowPermissionPrompt(IWebBrowser chromiumWebBrowser, IBrowser browser,
         ulong promptId, string origin, PermissionRequestType requested, IPermissionPromptCallback callback)
     {
-        owner.DispatchCefUi(async () =>
+        if (!owner.DispatchCefUi(async () =>
         {
             try
             {
-                bool allow = await owner.AskCefPermissionAsync(origin, requested.ToString());
+                bool allow = await owner.AskCefPermissionAsync(tabId, origin, requested.ToString());
                 callback.Continue(allow ? PermissionRequestResult.Accept : PermissionRequestResult.Deny);
             }
             catch (Exception e) { owner.CefDownloadError(e); callback.Continue(PermissionRequestResult.Deny); }
             finally { callback.Dispose(); }
-        });
+        })) callback.Dispose();
         return true;
     }
 
     protected override bool OnRequestMediaAccessPermission(IWebBrowser chromiumWebBrowser, IBrowser browser,
         IFrame frame, string origin, MediaAccessPermissionType requested, IMediaAccessCallback callback)
     {
-        owner.DispatchCefUi(async () =>
+        if (!owner.DispatchCefUi(async () =>
         {
             try
             {
-                bool allow = await owner.AskCefPermissionAsync(origin, "media:" + requested);
+                bool allow = await owner.AskCefPermissionAsync(tabId, origin, "media:" + requested);
                 if (allow) callback.Continue(requested);
                 else callback.Cancel();
             }
             catch (Exception error) { owner.CefDownloadError(error); callback.Cancel(); }
             finally { callback.Dispose(); }
-        });
+        })) callback.Dispose();
         return true;
     }
 }
@@ -63,24 +63,29 @@ internal sealed partial class MainForm
         { Program.LogError(DataPath, ex); }
     }
 
-    internal async Task<bool> AskCefPermissionAsync(string requestingOrigin, string permissionType)
+    internal async Task<bool> AskCefPermissionAsync(Guid tabId, string requestingOrigin, string permissionType)
     {
         if (_closing || !Uri.TryCreate(requestingOrigin, UriKind.Absolute, out var uri) ||
             !(uri.Scheme == "https" || (uri.Scheme == "http" && uri.IsLoopback)) ||
             uri.UserInfo.Length > 0) return false;
         string origin = uri.GetLeftPart(UriPartial.Authority);
+        if (!IsActiveCefPermissionOrigin(tabId, origin)) return false;
         string key = origin + "|" + permissionType;
         await _permissionQueue.WaitAsync();
         try
         {
             LoadCefPermissions();
+            if (!IsActiveCefPermissionOrigin(tabId, origin)) return false;
             if (_cefStoredPermissions.TryGetValue(key, out bool known)) return known;
             if (_closing || IsDisposed) return false;
             bool result = await AskInsideWindowAsync(
                 "Разрешение сайта · Chromium CEF",
                 origin + "\n\nЗапрос: " + permissionType + "\nРазрешайте только доверенным сайтам.",
                 remember: true);
-            if (_permissionRemember?.Checked == true)
+            // Navigation, focus changes or tab closure invalidate prior consent.
+            bool originStillActive = IsActiveCefPermissionOrigin(tabId, origin);
+            result &= originStillActive;
+            if (originStillActive && _permissionRemember?.Checked == true)
             {
                 _cefStoredPermissions[key] = result;
                 string draft = CefPermissionPath + ".tmp";
@@ -102,6 +107,16 @@ internal sealed partial class MainForm
             _permissionPanel = null;
             _permissionQueue.Release();
         }
+    }
+
+    private bool IsActiveCefPermissionOrigin(Guid tabId, string origin)
+    {
+        if (_closing || !_cefRuntimes.TryGetValue(tabId, out var runtime) ||
+            !CefIsAlive(runtime) || runtime.Tab != ActiveTab ||
+            !Uri.TryCreate(runtime.View.Address, UriKind.Absolute, out var activeUri))
+            return false;
+        return activeUri.GetLeftPart(UriPartial.Authority)
+            .Equals(origin, StringComparison.OrdinalIgnoreCase);
     }
 
     private void ShowCefPermissions()

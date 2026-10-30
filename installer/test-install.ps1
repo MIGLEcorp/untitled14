@@ -9,7 +9,7 @@ New-Item -ItemType Directory -Path (Join-Path $testApp 'Modules') -Force | Out-N
 Set-Content -LiteralPath (Join-Path $testApp 'Feather.exe') -Value 'legacy fixture'
 Set-Content -LiteralPath (Join-Path $testApp 'Modules\Feather.Features.dll') -Value 'legacy fixture'
 Set-Content -LiteralPath (Join-Path $testApp 'preserved.txt') -Value 'preserve this file'
-# TESTMODE disables uninstall registration, shortcuts, launch and WebView2 installation.
+# TESTMODE disables uninstall registration, shortcuts and launch.
 $process = Start-Process -FilePath $installerPath -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TESTMODE=1',('/DIR="' + $testApp + '"'),('/LOG="' + (Join-Path $testRoot 'install.log') + '"')) -WindowStyle Hidden -Wait -PassThru
 if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode). See $testRoot" }
 foreach ($file in @('MBrowser.exe','MBrowser.dll','coreclr.dll','Modules\MBrowser.Features.dll','Features\ImageOcr\MBrowser.Ocr.exe','Features\ImageOcr\Microsoft.Windows.SDK.NET.dll','assets\sakura-home.png','assets\sakura-menu.png','assets\sakura-header.png','assets\mbrowser.ico','assets\REN-PY-ART-LICENSE.txt','docs\menu.png','docs\theme-editor.png','docs\image-translation.png')) {

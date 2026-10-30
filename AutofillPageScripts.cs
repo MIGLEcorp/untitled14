@@ -39,7 +39,11 @@ internal static class AutofillPageScripts
 
     // CEF sends only message metadata to the host, never a saved credential.
     // The host independently probes the current main-frame document before filling.
-    internal static string CefObserver => Observer.Replace("window.chrome.webview.postMessage", "CefSharp.PostMessage", StringComparison.Ordinal);
+    internal static string CefObserver => Observer
+        .Replace("window.chrome.webview.postMessage", "CefSharp.PostMessage", StringComparison.Ordinal)
+        .Replace("if (window !== window.top || !window.isSecureContext) return;",
+            "if (window !== window.top || !window.isSecureContext) return; window.__mbrowserCredObserverRan = true;",
+            StringComparison.Ordinal);
 
     internal static string Observer => """
         (() => {
@@ -48,7 +52,9 @@ internal static class AutofillPageScripts
             const seen = new WeakSet();
             let pending;
             const post = kind => {
+                window.__mbrowserCredPostAttempts = (window.__mbrowserCredPostAttempts || 0) + 1;
                 const login = findLogin();
+                window.__mbrowserCredLoginFound = !!login;
                 if (!login || kind === 'focus' && ![login.password, login.user].includes(document.activeElement)) {
                     if (kind === 'focus') window.chrome.webview.postMessage({ type: 'feather.credentials', kind: 'dismiss', origin: location.origin });
                     return;

@@ -56,7 +56,7 @@ internal sealed partial class MainForm : BrowserWindow
             else continue;
             _session.Tabs.Add(tab); _session.SelectedIndex=_session.Tabs.Count-1;
         }
-        Text = cefEngine ? "MBrowser — Chromium CEF" : "MBrowser — WebView2";
+        Text = "MBrowser — Chromium CEF";
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         Size = new Size(1180, 800);
         MinimumSize = new Size(820, 650);

@@ -35,8 +35,8 @@ internal sealed partial class MainForm
             Dock = DockStyle.Fill,
             AccessibleName = "Chromium Embedded Framework page"
         };
-        browser.DownloadHandler = new CefDownloadsHandler(this);
-        browser.PermissionHandler = new CefPermissionsHandler(this);
+        browser.DownloadHandler = new CefDownloadsHandler(this, tab.Id);
+        browser.PermissionHandler = new CefPermissionsHandler(this, tab.Id);
         browser.RequestHandler = new CefNavigationHandler(this, tab);
         browser.LifeSpanHandler = new CefPopupHandler(this);
         browser.DisplayHandler = new CefDisplayHandler(this);
@@ -317,7 +317,6 @@ internal sealed partial class MainForm
 
     private void ShowCefMemorySettings()
     {
-        if (!_cefEngine) return;
         ShowMenuPage("CEF 154 — экономия RAM", rows =>
         {
             rows("Изменения требуют закрыть и заново открыть режим CEF", () => { });
@@ -378,7 +377,7 @@ internal sealed partial class MainForm
             else
                 rows("Компактный кэш изображений: нужен свой libcef (ещё нет)", () => { });
             rows("Запрошенные флаги: " + CefMemoryFeatures.CommandLine(_preferences, _cefCustomLibCef), () => { });
-            rows("Применить: закрой CEF и запусти Start-Cef-MBrowser.cmd", () => { });
+            rows("Применить: перезапусти MBrowser", () => { });
         });
     }
 

@@ -34,16 +34,18 @@ internal static class Program
         }
 
         // CEF-only: WebView2 has been removed from the production executable.
+        bool credentialSmoke = args.Length == 1 && args[0] == "--cef-credentials-smoke";
         bool extensionPopupSmoke = args.Length == 1 && args[0] == "--cef-extension-ui-smoke";
         bool extensionSmoke = extensionPopupSmoke || (args.Length == 1 && args[0] == "--cef-extension-smoke");
-        bool cefSmoke = extensionSmoke || (args.Length == 1 && (args[0] == "--cef-smoke" || args[0] == "--smoke-test"));
+        bool cefSmoke = credentialSmoke || extensionSmoke ||
+            (args.Length == 1 && (args[0] == "--cef-smoke" || args[0] == "--smoke-test"));
         {
             bool customCef = CefMemoryFeatures.HasVerifiedCustomBuildMarker(AppContext.BaseDirectory);
             string dataPathCef = cefSmoke
                 ? Path.Combine(Path.GetTempPath(), "MBrowser-cef-smoke-" + Guid.NewGuid().ToString("N"))
                 : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "FeatherBrowser");
-            using var cefSmokeServer = cefSmoke ? new CefSmokeServer() : null;
+            using var cefSmokeServer = cefSmoke ? new CefSmokeServer(credentialSmoke) : null;
             string[] targets = cefSmoke ? [cefSmokeServer!.Url] :
                 BrowserDocuments.ParseArguments(args.Length > 0 && args[0] == "--cef"
                     ? args.Skip(1).ToArray() : args);
@@ -131,6 +133,7 @@ internal static class Program
                 }
                 catch (InvalidOperationException) when (cefForm.IsDisposed || !cefForm.IsHandleCreated) { }
             });
+            int smokeExitCode = 1;
             if (cefSmoke)
             {
                 cefForm.Shown += (_, _) =>
@@ -159,15 +162,21 @@ internal static class Program
                                 Environment.NewLine + "CEF_MV3_WORKER_MESSAGE_OK=" + mv3Worker +
                                 Environment.NewLine + "CEF_MV3_RUNTIME_ID=" + mv3Id +
                                 Environment.NewLine + "CEF_MV3_POPUP_PAGE_OK=" + popupReady +
+                                Environment.NewLine + "CEF_LOGIN_BRIDGE_MESSAGES=" + cefForm.CefLoginBridgeMessagesForTest +
+                                Environment.NewLine + "CEF_RAW_JS_MESSAGES=" + cefForm.CefRawJsMessagesForTest +
+                                Environment.NewLine + "CEF_RAW_JS_MESSAGE_INFO=" + cefForm.CefRawJsMessageInfoForTest +
+                                Environment.NewLine + "CEF_LOGIN_BRIDGE_DIAGNOSTICS=" + (credentialSmoke ? await cefForm.CefCredentialDiagnosticsForTestAsync() : "not tested") +
                                 Environment.NewLine + "CEF_LIVE_VIEWS=" + cefForm.LiveViewCount +
                                 Environment.NewLine + "CEF_GROUP_PROCESSES=" + cefForm.ReadMemory().ProcessCount);
-                            if (!info.BrowserInitialized || !agent || (extensionSmoke && (!mv3 || !mv3Worker)) ||
-                                (extensionPopupSmoke && !popupReady)) Environment.ExitCode = 1;
+                            smokeExitCode = (!info.BrowserInitialized || !agent ||
+                                (extensionSmoke && (!mv3 || !mv3Worker)) ||
+                                (extensionPopupSmoke && !popupReady) ||
+                                (credentialSmoke && cefForm.CefLoginBridgeMessagesForTest == 0)) ? 1 : 0;
                         }
                         catch (Exception ex)
                         {
                             LogError(dataPathCef, ex);
-                            Environment.ExitCode = 1;
+                            smokeExitCode = 1;
                         }
                         finally { cefForm.Close(); }
                     };
@@ -175,7 +184,7 @@ internal static class Program
                 };
             }
             Application.Run(cefForm);
-            return Environment.ExitCode;
+            return cefSmoke ? smokeExitCode : Environment.ExitCode;
         }
 
     }

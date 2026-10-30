@@ -5,16 +5,38 @@ namespace MBrowser;
 
 internal sealed partial class MainForm
 {
+    private int _cefLoginBridgeMessages;
+    private int _cefRawJsMessages;
+    private string _cefRawJsMessageInfo = "";
+    internal int CefLoginBridgeMessagesForTest => _cefLoginBridgeMessages;
+    internal int CefRawJsMessagesForTest => Volatile.Read(ref _cefRawJsMessages);
+    internal string CefRawJsMessageInfoForTest => _cefRawJsMessageInfo;
+
     /// <summary>Opaque CEF message from the main frame; never contains stored secrets.</summary>
     private void ConfigureCefPasswordAutofill(CefTabRuntime runtime)
     {
         var browser = runtime.View;
         browser.JavascriptMessageReceived += (_, args) =>
         {
-            if (!args.Frame.IsMain) return;
-            var source = args.Frame.Url;
-            var json = JsonSerializer.Serialize(args.Message);
-            DispatchCefUi(() => HandleCefCredentialsMessageAsync(runtime, source, json));
+            if (_smoke) Interlocked.Increment(ref _cefRawJsMessages);
+            try
+            {
+                // JavascriptMessageReceived runs on a ThreadPool after CEF has
+                // sometimes disposed the event IFrame. Never dereference it.
+                // Treat all messages as untrusted hints; on the UI thread the
+                // current top document, origin and login-field geometry are
+                // independently validated before any vault lookup or fill.
+                var json = JsonSerializer.Serialize(args.Message);
+                if (_smoke) _cefRawJsMessageInfo = "main frame, bytes=" + json.Length;
+                DispatchCefUi(() => HandleCefCredentialsMessageAsync(
+                    runtime, runtime.View.Address ?? "", json));
+            }
+            catch (Exception error) when (error is InvalidOperationException or
+                ObjectDisposedException or JsonException or NotSupportedException)
+            {
+                if (_smoke) _cefRawJsMessageInfo = error.GetType().Name + ": " + error.Message;
+                Program.LogError(DataPath, error);
+            }
         };
         browser.SizeChanged += (_, _) => { if (runtime.Tab == ActiveTab) DismissPasswordPopup(); };
     }
@@ -33,6 +55,7 @@ internal sealed partial class MainForm
                 origin.GetString() != PasswordOrigin(source) ||
                 !root.TryGetProperty("kind", out var kind)) return;
             var action = kind.GetString();
+            if (_smoke && action is "ready" or "focus") _cefLoginBridgeMessages++;
             if (action == "dismiss") { DismissPasswordPopup(); return; }
             if (DateTimeOffset.UtcNow < _passwordSuppressUntil) return;
             if (action is "focus" or "ready")
@@ -40,6 +63,22 @@ internal sealed partial class MainForm
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         { Program.LogError(DataPath, ex); }
+    }
+
+    internal async Task<string> CefCredentialDiagnosticsForTestAsync()
+    {
+        if (!_cefRuntimes.TryGetValue(ActiveTab.Id, out var runtime) ||
+            !CefIsAlive(runtime) || !runtime.View.CanExecuteJavascriptInMainFrame)
+            return "No active JavaScript browser";
+        try
+        {
+            var js = "JSON.stringify({secure:window.isSecureContext,cef:typeof CefSharp,post:typeof CefSharp?.PostMessage,observer:window.__mbrowserCredObserverRan===true,postAttempts:window.__mbrowserCredPostAttempts||0,loginFound:window.__mbrowserCredLoginFound===true,passwords:document.querySelectorAll('input[type=password]').length,origin:location.origin})";
+            var result = await runtime.View.EvaluateScriptAsync(js);
+            var probe = await runtime.View.EvaluateScriptAsync(AutofillPageScripts.Probe(false));
+            return (result.Success ? result.Result?.ToString() ?? "null" : "FAILED: " + result.Message)
+                + "; probe=" + (probe.Success ? (probe.Result is null ? "null" : "object") : probe.Message);
+        }
+        catch (Exception error) { return error.GetType().Name + ": " + error.Message; }
     }
 
     private Task CefSuggestPasswordsAsync()

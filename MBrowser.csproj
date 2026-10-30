@@ -29,8 +29,4 @@
     <ProjectReference Include="Features\MBrowser.Features.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;PublishDir" />
     <Content Include="Features\bin\$(Configuration)\net10.0-windows\MBrowser.Features.dll" Link="Modules\MBrowser.Features.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
-  <ItemGroup>
-    <!-- Legacy WebView2 code retained in git history, excluded from CEF-only binary. -->
-    <Compile Remove="MainForm.WebViews.cs;MainForm.Sleep.cs;MainForm.Extensions.cs;MainForm.Translator.cs;SmokeTests.cs;WindowFrameTests.cs;PasswordAutofillTests.cs;TranslatorTests.cs" />
-  </ItemGroup>
 </Project>

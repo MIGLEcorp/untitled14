@@ -4,7 +4,7 @@ namespace MBrowser;
 
 /// <summary>
 /// Enumerate Windows process-tree descendants of the CEF host. This avoids
-/// counting unrelated Chrome/CEF instances and keeps the active WebView2 build
+/// counting unrelated Chrome/CEF instances and keeps the active CEF build
 /// unchanged. Race conditions during process teardown are tolerated by callers.
 /// </summary>
 internal static class CefProcessMetrics

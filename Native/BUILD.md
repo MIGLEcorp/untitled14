@@ -14,8 +14,8 @@ the DLL when changing its C++ source. If the DLL or DXGI 1.4 is unavailable,
 the RAM diagnostics still work and the VRAM row reads "нет данных".
 
 **Meaning of the numbers:** DXGI reports the **calling process's** VRAM usage
-and assigned budget (not its WebView2 child processes). The additional PDH
+and assigned budget (not every Chromium/CEF child process). The additional PDH
 export queries the Windows system-wide \\GPU Adapter Memory(*)\\Dedicated Usage
 counter across visible adapters. These are different measurement scopes,
-not a per-WebView2 VRAM measurement. The DLL does not hook Chromium, change its safety settings,
+not a per-CEF-tab VRAM measurement. The DLL does not hook Chromium, change its safety settings,
 move JavaScript heaps into video memory, or bypass memory protections.
