@@ -30,6 +30,58 @@ public static class CoreTests
         {
             ThemeTests.RunCore(Check, folder);
             BrowserIntegrationTests.RunCore(Check,folder);
+            Check("Tab strip restores hidden tabs when overflow arrows disappear", () =>
+            {
+                using var strip = new TabStrip { Width = 820 };
+                strip.Tabs = Enumerable.Range(0, 20)
+                    .Select(i => new BrowserTab { Title = "Tab " + i }).ToArray();
+                strip.SelectedIndex = 19;
+                strip.RevealSelected();
+                Assert(strip.HasOverflowForTest && strip.VisibleStartForTest > 0,
+                    "Narrow strip should scroll to the selected tab");
+                using (var narrow = new Bitmap(strip.Width, strip.Height))
+                    strip.DrawToBitmap(narrow, new Rectangle(Point.Empty, strip.Size));
+                Assert(strip.PaintedOverflowArrowsForTest && strip.PaintedTabCountForTest > 0,
+                    "Narrow layout did not paint scrolling arrows and visible tabs");
+
+                // Expanding must paint all 20 tabs and reset the scroll offset.
+                strip.Width = 3600;
+                using (var wide = new Bitmap(strip.Width, strip.Height))
+                    strip.DrawToBitmap(wide, new Rectangle(Point.Empty, strip.Size));
+                Assert(!strip.HasOverflowForTest && !strip.PaintedOverflowArrowsForTest,
+                    "Overflow arrows survived a wide resize");
+                Assert(strip.VisibleStartForTest == 0 && strip.VisibleCountForTest == 20 &&
+                    strip.PaintedTabCountForTest == 20,
+                    "Tabs remained hidden or unpainted after the arrows disappeared");
+
+                // Repeating the resize must keep the selected tab reachable.
+                strip.Width = 820;
+                Assert(strip.HasOverflowForTest && strip.VisibleStartForTest > 0,
+                    "Overflow did not return after shrinking");
+                strip.Width = 3600;
+                Assert(strip.VisibleStartForTest == 0 && strip.VisibleCountForTest == 20,
+                    "Second expansion failed to reveal every tab");
+            });
+            Check("Tab strip clamps scroll after closing tabs or partial expansion", () =>
+            {
+                Assert(TabStrip.FirstVisibleForLayout(20, 19, 5, 18) == 15,
+                    "Scroll offset was not clamped to the last full page");
+                Assert(TabStrip.FirstVisibleForLayout(20, 8, 8, 15) == 8,
+                    "Selected tab became hidden when capacity increased");
+                Assert(TabStrip.FirstVisibleForLayout(20, 19, 20, 15) == 0,
+                    "Overflow-free layout did not reset the offset");
+                Assert(TabStrip.FirstVisibleForLayout(0, 0, 4, 20) == 0,
+                    "Empty tab list retained old scroll position");
+                using var strip = new TabStrip { Width = 820 };
+                strip.Tabs = Enumerable.Range(0, 20).Select(i => new BrowserTab()).ToArray();
+                strip.SelectedIndex = 19;
+                strip.RevealSelected();
+                strip.Tabs = strip.Tabs.Take(2).ToArray();
+                strip.SelectedIndex = 1;
+                strip.RevealSelected();
+                Assert(!strip.HasOverflowForTest && strip.VisibleStartForTest == 0 &&
+                    strip.VisibleCountForTest == 2, "Closing tabs left hidden entries");
+            });
             Check("Address parsing: domains, ports, loopback and Unicode", () =>
             {
                 Resolves(" example.com ", "https://example.com/");

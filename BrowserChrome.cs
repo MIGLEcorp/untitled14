@@ -113,11 +113,32 @@ internal sealed class TabStrip : Control
     protected override void OnPaintBackground(PaintEventArgs e) => ThemeMedia.DrawChromeSlice(e.Graphics, this);
     private bool HasOverflow => Tabs.Count > Capacity;
 
+    // When the window grows, old scroll offsets must not hide tabs after the
+    // overflow arrows disappear. Always fill available slots, including after
+    // closing tabs or restoring a maximized/fullscreen window.
+    internal static int FirstVisibleForLayout(int total, int selected, int capacity, int first)
+    {
+        if (total <= 0 || capacity >= total) return 0;
+        capacity = Math.Max(1, capacity);
+        int lastStart = total - capacity;
+        first = Math.Clamp(first, 0, lastStart);
+        if (selected >= 0 && selected < total)
+        {
+            if (selected < first) first = selected;
+            else if (selected >= first + capacity) first = selected - capacity + 1;
+        }
+        return Math.Clamp(first, 0, lastStart);
+    }
+
+    internal int VisibleStartForTest => _firstVisible;
+    internal int VisibleCountForTest => Math.Min(Capacity, Math.Max(0, Tabs.Count - _firstVisible));
+    internal bool HasOverflowForTest => HasOverflow;
+    internal int PaintedTabCountForTest => _hits.Count;
+    internal bool PaintedOverflowArrowsForTest => !_previous.IsEmpty && !_next.IsEmpty;
+
     public void RevealSelected()
     {
-        if (SelectedIndex < _firstVisible) _firstVisible = SelectedIndex;
-        if (SelectedIndex >= _firstVisible + Capacity) _firstVisible = SelectedIndex - Capacity + 1;
-        _firstVisible = Math.Clamp(_firstVisible, 0, Math.Max(0, Tabs.Count - 1));
+        _firstVisible = FirstVisibleForLayout(Tabs.Count, SelectedIndex, Capacity, _firstVisible);
         _hovered = -2;
         Invalidate();
     }
