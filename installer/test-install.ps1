@@ -1,4 +1,4 @@
-param([string]$Installer = (Join-Path $PSScriptRoot '..\artifacts\MBrowser-4.3.0-beta.1-Setup-x64.exe'))
+param([string]$Installer = (Join-Path $PSScriptRoot '..\artifacts\MBrowser-4.4.0-rc.3-Setup-x64.exe'))
 $ErrorActionPreference = 'Stop'
 $installerPath = (Resolve-Path -LiteralPath $Installer).Path
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('MBrowser-install-' + [Guid]::NewGuid().ToString('N'))
@@ -6,6 +6,7 @@ $testApp = Join-Path $testRoot 'app'
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $testApp 'Modules') -Force | Out-Null
 # Seed only disposable fixtures to exercise the rename/upgrade cleanup.
+New-Item -ItemType Directory -Path (Join-Path $testApp 'Feather') -Force | Out-Null
 Set-Content -LiteralPath (Join-Path $testApp 'Feather.exe') -Value 'legacy fixture'
 Set-Content -LiteralPath (Join-Path $testApp 'Modules\Feather.Features.dll') -Value 'legacy fixture'
 Set-Content -LiteralPath (Join-Path $testApp 'preserved.txt') -Value 'preserve this file'
@@ -17,6 +18,7 @@ foreach ($file in @('MBrowser.exe','MBrowser.dll','coreclr.dll','Modules\MBrowse
 }
 if (Test-Path -LiteralPath (Join-Path $testApp 'unins000.exe')) { throw 'Test installation unexpectedly registered an uninstaller.' }
 if ((Test-Path -LiteralPath (Join-Path $testApp 'Feather.exe')) -or (Test-Path -LiteralPath (Join-Path $testApp 'Modules\Feather.Features.dll'))) { throw 'Legacy executable fixtures were not removed.' }
+if (Test-Path -LiteralPath (Join-Path $testApp 'Feather')) { throw 'Legacy empty Feather folder was not removed.' }
 if ((Get-Content -LiteralPath (Join-Path $testApp 'preserved.txt') -Raw).Trim() -ne 'preserve this file') { throw 'Installer changed an unrelated file.' }
 $metadata = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $testApp 'MBrowser.exe'))
 if ($metadata.ProductName -ne 'MBrowser' -or $metadata.FileDescription -ne 'MBrowser') { throw 'MBrowser process branding is missing.' }

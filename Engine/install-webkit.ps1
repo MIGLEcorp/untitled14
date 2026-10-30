@@ -1,5 +1,5 @@
 param(
-    [string]$BrowsersPath = (Join-Path $env:LOCALAPPDATA 'FeatherBrowser\Engines\WebKit')
+    [string]$BrowsersPath = (Join-Path $env:LOCALAPPDATA 'MBrowser\Engines\WebKit')
 )
 
 $ErrorActionPreference = 'Stop'

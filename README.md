@@ -13,12 +13,17 @@ Manifest V3 content scripts, service worker, chrome.storage и popup прове�
 особенности защищённых сайтов ещё требуют сценарных тестов.
 
 Документация: [CEF-only migration preview](docs/CEF_ONLY_4_4_PREVIEW.md).
+**RC3:** добавлен проверенный перенос профиля из `%LOCALAPPDATA%\FeatherBrowser`
+в `%LOCALAPPDATA%\MBrowser` с SHA-256, сохранением архива WebView2 и удалением
+старого каталога только после успешного копирования.
+[Порядок и ограничения переноса](docs/PROFILE_MIGRATION_RC3.md).
 Стабильная версия 4.3.0 остаётся последним рекомендованным выпуском для
 основного профиля, пока миграция не получит расширенное покрытие тестами.
 
 MBrowser для Windows x64: .NET 10/WinForms, Chromium CEF 154, без Electron
-и без Microsoft Edge WebView2 Runtime. В профиле
-\`%LOCALAPPDATA%\FeatherBrowser\` хранятся прежние пользовательские данные.
+и без Microsoft Edge WebView2 Runtime. Новые пользовательские данные хранятся в
+`%LOCALAPPDATA%\MBrowser`; старый профиль `FeatherBrowser` переносится при
+первом обычном запуске после закрытия предыдущей версии.
 
 В 4.2: круглые поля поиска и адреса, плавное появление меню и подсветка кнопок,
 регистрация браузером по умолчанию и подключение официального Immersive Translate.

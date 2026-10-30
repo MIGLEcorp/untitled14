@@ -5,7 +5,7 @@ AppName=MBrowser
 MinVersion=10.0.19041
 AppMutex={code:GetAppMutex}
 AppVersion={#AppVersion}
-AppVerName=MBrowser 4.4.0 RC2 Chromium CEF-only
+AppVerName=MBrowser 4.4.0 RC3 — проверенный перенос FeatherBrowser
 AppPublisher=MIGLEcorp
 AppPublisherURL=https://github.com/MIGLEcorp/untitled14
 DefaultDirName={localappdata}\Programs\MBrowser
@@ -15,7 +15,7 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\artifacts
-OutputBaseFilename=MBrowser-{#AppVersion}-rc.2-Setup-x64
+OutputBaseFilename=MBrowser-{#AppVersion}-rc.3-Setup-x64
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -44,12 +44,14 @@ Type: files; Name: "{app}\Feather.exe"
 Type: files; Name: "{app}\Feather.dll"
 Type: files; Name: "{app}\Feather.deps.json"
 Type: files; Name: "{app}\Feather.runtimeconfig.json"
+Type: dirifempty; Name: "{app}\Feather"
 Type: files; Name: "{app}\Modules\Feather.Features.dll"
 Type: files; Name: "{app}\Features\WebKit\Feather.WebKit.exe"
 Type: files; Name: "{app}\Features\WebKit\Feather.WebKit.dll"
 Type: files; Name: "{app}\Features\WebKit\Feather.WebKit.deps.json"
 Type: files; Name: "{app}\Features\WebKit\Feather.WebKit.runtimeconfig.json"
 Type: files; Name: "{userprograms}\Feather\Feather.lnk"; Check: not IsTestInstall
+Type: dirifempty; Name: "{userprograms}\Feather"; Check: not IsTestInstall
 Type: files; Name: "{autodesktop}\Feather.lnk"; Check: not IsTestInstall
 [Run]
 Filename: "{app}\MBrowser.exe"; Parameters: "--register-browser"; Flags: runhidden waituntilterminated; Check: not IsTestInstall

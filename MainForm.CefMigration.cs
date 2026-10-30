@@ -4,7 +4,7 @@ namespace MBrowser;
 internal static class CefMigrationNotice
 {
     internal static bool NeedsNotice(string profile) =>
-        Directory.Exists(Path.Combine(profile, "WebView2")) &&
+        Directory.Exists(Path.Combine(profile, ProfileMigration.LegacyWebViewArchive)) &&
         !File.Exists(Path.Combine(profile, "cef-migration-notice-dismissed"));
 
     internal static void Dismiss(string profile)
@@ -22,10 +22,10 @@ internal sealed partial class MainForm
         ShowMenuPage("Переход с WebView2 на CEF", add =>
         {
             add("Сеанс, закладки, настройки и пароли MBrowser сохранены", () => { });
-            add("Cookie и встроенные пароли Edge не копируются автоматически", () => { });
+            add("Cookie и пароли Edge сохранены в архиве, но не импортированы в CEF", () => { });
             add("Импортировать cookie и закладки из файла", ShowImport);
             add("Импортировать пароли CSV в защищённое хранилище", ShowPasswords);
-            add("Старый профиль WebView2 остаётся на месте", () => { });
+            add("Архив WebView2 сохранён в папке MBrowser", () => { });
             add("Напомнить позже", () => { });
             add("Понятно, больше не показывать", () =>
             {

@@ -21,7 +21,13 @@ internal static class WebKitPreviewLauncher
         try
         {
             string executable = await FindOrBuildHelperAsync(owner);
-            dataPath ??= Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FeatherBrowser");
+            if (dataPath is null)
+            {
+                string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                string modern = Path.Combine(local, "MBrowser");
+                string legacy = Path.Combine(local, "FeatherBrowser");
+                dataPath = Directory.Exists(modern) || !Directory.Exists(legacy) ? modern : legacy;
+            }
             var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true };
             start.ArgumentList.Add("--url");
             start.ArgumentList.Add(uri.AbsoluteUri);

@@ -16,7 +16,11 @@ internal static class Program
         if(args.Length==1 && args[0]=="--unregister-browser") { BrowserRegistration.Unregister(Application.ExecutablePath); return 0; }
         if(args.Length==2 && args[0]=="--prepare-translator")
         {
-            string profile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"FeatherBrowser");
+            string local=Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string profile=Path.Combine(local,"MBrowser");
+            // Never create the new root prematurely before the offline profile migration.
+            if (!Directory.Exists(profile) && Directory.Exists(Path.Combine(local,"FeatherBrowser")))
+                profile=Path.Combine(local,"FeatherBrowser");
             TranslatorPackage.PrepareAsync(profile,args[1]).GetAwaiter().GetResult(); return 0;
         }
         if (args.Length > 0 && args[0] == "--webview2")
@@ -45,7 +49,7 @@ internal static class Program
             string dataPathCef = cefSmoke
                 ? Path.Combine(Path.GetTempPath(), "MBrowser-cef-smoke-" + Guid.NewGuid().ToString("N"))
                 : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "FeatherBrowser");
+                    "MBrowser");
             using var cefSmokeServer = cefSmoke ? new CefSmokeServer(credentialSmoke) : null;
             string[] targets = cefSmoke ? [cefSmokeServer!.Url] :
                 BrowserDocuments.ParseArguments(args.Length > 0 && args[0] == "--cef"
@@ -61,8 +65,10 @@ internal static class Program
                     MessageBox.Show("MBrowser уже открыт. Закройте старую версию перед запуском обновления.", "MBrowser");
                 return 0;
             }
+            if (!cefSmoke)
+                dataPathCef = UserProfileBootstrap.Prepare(dataPathCef);
             Directory.CreateDirectory(dataPathCef);
-            // Existing profile and passwords stay untouched.
+            // The previous profile is migrated and verified before CEF is initialized.
             string cefRoot = Path.Combine(dataPathCef, "CEFRuntime");
             Directory.CreateDirectory(cefRoot);
             string cefCache = Path.Combine(cefRoot, "Default");

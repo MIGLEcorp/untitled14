@@ -11,8 +11,18 @@ internal sealed record PreviewOptions
     internal bool SmokeTest { get; private set; }
     internal bool Headed { get; private set; }
 
-    private static string DefaultDataPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FeatherBrowser");
+    private static string DefaultDataPath
+    {
+        get
+        {
+            string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string modern = Path.Combine(local, "MBrowser");
+            string legacy = Path.Combine(local, "FeatherBrowser");
+            // A standalone helper must not create the new profile before
+            // MBrowser can perform its verified offline migration.
+            return Directory.Exists(modern) || !Directory.Exists(legacy) ? modern : legacy;
+        }
+    }
 
     internal static PreviewOptions Parse(string[] args)
     {

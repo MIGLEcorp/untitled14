@@ -103,6 +103,60 @@ public static class CoreTests
                     "Keyed Chromium extension ID changed with its folder");
             });
 
+            Check("Verified Feather-to-MBrowser migration preserves everything before deletion", () =>
+            {
+                string parent = Path.Combine(folder, "profile-migration-fixture");
+                string legacy = Path.Combine(parent, "FeatherBrowser");
+                string modern = Path.Combine(parent, "MBrowser");
+                Directory.CreateDirectory(Path.Combine(legacy, "WebView2", "EBWebView", "Default", "Network"));
+                Directory.CreateDirectory(Path.Combine(legacy, "Favicons"));
+                string extensionFolder = Path.Combine(legacy, "Extensions", "MigratedMV3");
+                Directory.CreateDirectory(extensionFolder);
+                File.WriteAllText(Path.Combine(extensionFolder, "manifest.json"),
+                    "{\"manifest_version\":3,\"name\":\"Migrated MV3\",\"version\":\"1.0\"}");
+                byte[] original = Enumerable.Range(0, 16384).Select(i => (byte)(i % 251)).ToArray();
+                File.WriteAllBytes(Path.Combine(legacy, "passwords.dpapi"), original);
+                File.WriteAllBytes(Path.Combine(legacy, "WebView2", "EBWebView", "Default", "Network", "Cookies"), original);
+                File.WriteAllText(Path.Combine(legacy, "bookmarks.json"), "fixture-bookmarks");
+                File.WriteAllText(Path.Combine(legacy, "session.json"), "fixture-session");
+                var migrated = ProfileMigration.MoveVerified(legacy, modern);
+                Assert(migrated.Migrated && migrated.DeletedLegacy, "Fixture profile not moved or legacy folder survived");
+                Assert(!Directory.Exists(legacy), "Legacy folder was not removed after verification");
+                Assert(File.Exists(Path.Combine(modern, ProfileMigration.CompleteMarker)), "Missing migration marker");
+                Assert(File.ReadAllBytes(Path.Combine(modern, "passwords.dpapi")).SequenceEqual(original),
+                    "Encrypted password vault changed");
+                Assert(File.ReadAllBytes(Path.Combine(modern, ProfileMigration.LegacyWebViewArchive,
+                    "EBWebView", "Default", "Network", "Cookies")).SequenceEqual(original),
+                    "Legacy encrypted cookie archive was not preserved");
+                Assert(File.ReadAllText(Path.Combine(modern, "bookmarks.json")) == "fixture-bookmarks",
+                    "Bookmarks were lost");
+                Assert(File.ReadAllText(Path.Combine(modern, "session.json")) == "fixture-session",
+                    "Session was lost");
+                Assert(CefExtensionRegistry.Read(modern).Any(item => item.Name == "Migrated MV3"),
+                    "Legacy unpacked MV3 extension was not registered for CEF");
+                Assert(!ProfileMigration.MoveVerified(legacy, modern).Migrated,
+                    "Migration reran against an already migrated profile");
+            });
+
+            Check("Conflicting target prevents deletion of legacy profile", () =>
+            {
+                string parent = Path.Combine(folder, "profile-migration-conflict");
+                string legacy = Path.Combine(parent, "FeatherBrowser");
+                string modern = Path.Combine(parent, "MBrowser");
+                Directory.CreateDirectory(legacy);
+                Directory.CreateDirectory(modern);
+                File.WriteAllText(Path.Combine(legacy, "bookmarks.json"), "old");
+                File.WriteAllText(Path.Combine(modern, "bookmarks.json"), "new");
+                bool refused = false;
+                try { ProfileMigration.MoveVerified(legacy, modern); }
+                catch (IOException) { refused = true; }
+                Assert(refused, "Existing unverified target was overwritten");
+                Assert(File.ReadAllText(Path.Combine(legacy, "bookmarks.json")) == "old",
+                    "Original profile changed after migration conflict");
+                Assert(File.ReadAllText(Path.Combine(modern, "bookmarks.json")) == "new",
+                    "New profile changed after migration conflict");
+            });
+
             Check("Native Chromium password manager is disabled by default", () =>
             {
                 string profile = Path.Combine(folder, "native-chrome-optin");
@@ -121,11 +175,11 @@ public static class CoreTests
                 string profile = Path.Combine(folder, "cef-migration-profile");
                 Directory.CreateDirectory(profile);
                 Assert(!CefMigrationNotice.NeedsNotice(profile), "Fresh profile should not prompt migration");
-                Directory.CreateDirectory(Path.Combine(profile, "WebView2"));
-                Assert(CefMigrationNotice.NeedsNotice(profile), "Legacy profile should prompt migration");
+                Directory.CreateDirectory(Path.Combine(profile, ProfileMigration.LegacyWebViewArchive));
+                Assert(CefMigrationNotice.NeedsNotice(profile), "Migrated archive should prompt migration guidance");
                 CefMigrationNotice.Dismiss(profile);
                 Assert(!CefMigrationNotice.NeedsNotice(profile), "Dismissed migration prompt reappeared");
-                Assert(Directory.Exists(Path.Combine(profile, "WebView2")), "Legacy profile was modified");
+                Assert(Directory.Exists(Path.Combine(profile, ProfileMigration.LegacyWebViewArchive)), "Legacy archive was modified");
             });
 
             Check("CEF extension registry safely installs, disables and lists packages", () =>
