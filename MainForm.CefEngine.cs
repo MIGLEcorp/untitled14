@@ -1,5 +1,6 @@
 using CefSharp;
 using CefSharp.WinForms;
+using System.Text.Json;
 
 namespace MBrowser;
 
@@ -73,7 +74,10 @@ internal sealed partial class MainForm
                 runtime.LoadStartedUtc = null;
                 var duration = DateTimeOffset.UtcNow - loadStarted;
                 if (duration >= TimeSpan.FromSeconds(8))
+                {
                     RecordSlowCefNavigation(runtime.View.Address, duration);
+                    _ = RecordCefNavigationTimingAsync(runtime, duration);
+                }
             }
             if (!e.IsLoading && runtime.RestoreStartedUtc is { } restored)
             {
@@ -158,6 +162,38 @@ internal sealed partial class MainForm
                 $"{DateTimeOffset.UtcNow:O} host={uri.Host} elapsed_ms={elapsed.TotalMilliseconds:F0}{Environment.NewLine}");
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        { Program.LogError(DataPath, error); }
+    }
+
+    private async Task RecordCefNavigationTimingAsync(CefTabRuntime runtime, TimeSpan loadingElapsed)
+    {
+        // Measure browser timing separately from CEF's IsLoading flag, which
+        // includes outstanding subresources and may greatly exceed visual load.
+        if (!CefIsAlive(runtime) || !runtime.View.IsBrowserInitialized ||
+            !runtime.View.CanExecuteJavascriptInMainFrame ||
+            !Uri.TryCreate(runtime.View.Address, UriKind.Absolute, out var uri) ||
+            uri.Scheme is not ("http" or "https")) return;
+        const string script = "(() => { const n = performance.getEntriesByType('navigation')[0];" +
+            "const t = v => Number.isFinite(v) ? Math.round(v) : -1;" +
+            "return JSON.stringify({ttfb:t(n?.responseStart),dom:t(n?.domContentLoadedEventEnd)," +
+            "onload:t(n?.loadEventEnd),now:t(performance.now())}); })()";
+        try
+        {
+            var response = await runtime.View.EvaluateScriptAsync(script);
+            if (!response.Success || response.Result is not string json || json.Length > 200) return;
+            using var parsed = JsonDocument.Parse(json);
+            long Metric(string key) => parsed.RootElement.TryGetProperty(key, out var value) &&
+                value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out long ms) &&
+                ms is >= 0 and <= 1_000_000_000 ? ms : -1;
+            string line = $"{DateTimeOffset.UtcNow:O} host={uri.Host} " +
+                $"cef_loading_ms={loadingElapsed.TotalMilliseconds:F0} " +
+                $"ttfb_ms={Metric("ttfb")} dom_ms={Metric("dom")} " +
+                $"onload_ms={Metric("onload")} browser_elapsed_ms={Metric("now")}";
+            File.AppendAllText(Path.Combine(DataPath, "cef-navigation-metrics.log"),
+                line + Environment.NewLine);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or
+            ObjectDisposedException or InvalidOperationException or JsonException)
         { Program.LogError(DataPath, error); }
     }
 

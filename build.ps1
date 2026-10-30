@@ -1,4 +1,4 @@
-param([switch]$Installer, [switch]$CustomCef154,
+param([switch]$Installer, [switch]$CustomCef154, [switch]$BytePatchAsyncGuard,
     [string]$NativeCefDirectory = 'C:\src\cef154\chromium\src\out\Release_GN_x64')
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
@@ -57,6 +57,14 @@ try {
             if ($sourceHash -ne $targetHash) { throw "Custom CEF runtime hash mismatch: $name" }
         }
         Set-Content -LiteralPath (Join-Path $target 'MBrowser.CustomCef154.marker') -NoNewline -Encoding ASCII -Value 'MBROWSER_CUSTOM_CEF154_COMPACT_CACHE_V1'
+        if ($BytePatchAsyncGuard) {
+            # Hardened, exact-SHA, one-byte workaround for the Chromium 154
+            # base/win/post_async_results.h:332 mismatch DCHECK. This does NOT
+            # repair the mismatched COM identity and must stay pre-release.
+            & python (Join-Path $PSScriptRoot 'tools\patch_cef_async_guard.py') $nativeLib --target (Join-Path $target 'libcef.dll')
+            if ($LASTEXITCODE -ne 0) { throw 'The guarded native Chromium patch failed; installer build aborted.' }
+            Write-Host 'Experimental Chromium WinRT DCHECK byte patch staged.'
+        }
         (Get-FileHash (Join-Path $target 'libcef.dll') -Algorithm SHA256).Hash |
             Set-Content -LiteralPath (Join-Path $target 'CUSTOM_LIBCEF_SHA256.txt') -Encoding ASCII
         Write-Host 'Custom CEF 154 and matching runtime resources are staged.'

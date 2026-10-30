@@ -64,9 +64,23 @@ internal static class AutofillPageScripts
                 window.chrome.webview.postMessage({ type: 'feather.credentials', kind, origin: location.origin,
                     bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
             };
-            const ready = () => { clearTimeout(pending); pending = setTimeout(() => post('ready'), 120); };
+            const ready = () => { clearTimeout(pending); pending = setTimeout(() => post('ready'), 220); };
+            const relevantMutation = records => {
+                for (const record of records) {
+                    if (record.type === 'attributes' && record.target instanceof HTMLInputElement) {
+                        ready(); return;
+                    }
+                    for (const node of record.addedNodes) {
+                        if (node instanceof Element &&
+                            (node.matches('input') || node.querySelector('input'))) {
+                            ready(); return;
+                        }
+                    }
+                }
+            };
             document.addEventListener('focusin', () => queueMicrotask(() => post('focus')), true);
             document.addEventListener('pointerdown', event => {
+                if (!document.querySelector('input[type="password"]')) return;
                 const login = findLogin();
                 if (login && ![login.user, login.password].includes(event.target))
                     window.chrome.webview.postMessage({type:'feather.credentials', kind:'dismiss', origin:location.origin});
@@ -76,10 +90,22 @@ internal static class AutofillPageScripts
                 if (!login || ![login.password, login.user].includes(document.activeElement))
                     window.chrome.webview.postMessage({ type: 'feather.credentials', kind: 'dismiss', origin: location.origin });
             }, 0), true);
-            const dismiss = () => window.chrome.webview.postMessage({ type: 'feather.credentials', kind: 'dismiss', origin: location.origin });
+            let lastDismissAt = 0;
+            const dismiss = () => {
+                if (!document.querySelector('input[type="password"]')) return;
+                const now = performance.now();
+                if (now - lastDismissAt < 180) return;
+                lastDismissAt = now;
+                window.chrome.webview.postMessage({ type: 'feather.credentials', kind: 'dismiss', origin: location.origin });
+            };
             document.addEventListener('scroll', dismiss, true);
             window.addEventListener('resize', dismiss);
-            new MutationObserver(ready).observe(document, { childList: true, subtree: true });
+            // Only inspect new/changed input fields. Dynamic feeds frequently
+            // mutate unrelated elements and used to trigger thousands of probes.
+            new MutationObserver(relevantMutation).observe(document, {
+                childList: true, subtree: true, attributes: true,
+                attributeFilter: ['type', 'autocomplete']
+            });
             if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready, { once: true });
             else ready();
         })()
