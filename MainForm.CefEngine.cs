@@ -17,6 +17,7 @@ internal sealed partial class MainForm
         internal bool Loading { get; set; }
         internal string MemoryAgentScript { get; set; } = "";
         internal DateTimeOffset LastUsedUtc { get; set; } = DateTimeOffset.UtcNow;
+        internal DateTimeOffset? LoadStartedUtc { get; set; } = DateTimeOffset.UtcNow;
         internal DateTimeOffset? RestoreStartedUtc { get; set; }
     }
 
@@ -65,6 +66,15 @@ internal sealed partial class MainForm
         browser.LoadingStateChanged += (_, e) => OnUi(() =>
         {
             runtime.Loading = e.IsLoading;
+            if (e.IsLoading)
+                runtime.LoadStartedUtc ??= DateTimeOffset.UtcNow;
+            else if (runtime.LoadStartedUtc is { } loadStarted)
+            {
+                runtime.LoadStartedUtc = null;
+                var duration = DateTimeOffset.UtcNow - loadStarted;
+                if (duration >= TimeSpan.FromSeconds(8))
+                    RecordSlowCefNavigation(runtime.View.Address, duration);
+            }
             if (!e.IsLoading && runtime.RestoreStartedUtc is { } restored)
             {
                 _restoreCount++;
@@ -135,6 +145,20 @@ internal sealed partial class MainForm
             if (HandleShortcut(e.KeyData)) e.Handled = e.SuppressKeyPress = true;
         };
         return runtime;
+    }
+
+    private void RecordSlowCefNavigation(string? url, TimeSpan elapsed)
+    {
+        // Host only: avoid storing paths, search terms, private URLs or credentials.
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            uri.Scheme is not ("http" or "https")) return;
+        try
+        {
+            File.AppendAllText(Path.Combine(DataPath, "cef-slow-navigation.log"),
+                $"{DateTimeOffset.UtcNow:O} host={uri.Host} elapsed_ms={elapsed.TotalMilliseconds:F0}{Environment.NewLine}");
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        { Program.LogError(DataPath, error); }
     }
 
     private Task ShowCefActiveTabAsync()

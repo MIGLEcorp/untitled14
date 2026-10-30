@@ -18,6 +18,7 @@ internal static class ActivePageMemoryController
   // Do not interfere with cross-origin embedded widgets or frames.
   if (globalThis.top !== globalThis.self) return;
   let options = {};
+  let hadActivePolicies = false;
   let observer = null;
   let scheduled = false;
   let videoObserver = null;
@@ -117,6 +118,11 @@ internal static class ActivePageMemoryController
   const api = {
     configure(next) {
       options = next && typeof next === 'object' ? next : {};
+      const anyEnabled = enabled('images') || enabled('videos') || enabled('contentVisibility');
+      // Default settings turn every policy off. Avoid full DOM scans of heavy
+      // pages (marketplaces, social feeds) each time CEF reinjects the agent.
+      if (!anyEnabled && !hadActivePolicies) return;
+      hadActivePolicies = anyEnabled;
       if (!videoObserver && typeof IntersectionObserver === 'function') {
         videoObserver = new IntersectionObserver(entries => {
           for (const entry of entries) processVideo(entry.target);
@@ -152,7 +158,7 @@ internal static class ActivePageMemoryController
       }
       // Disabling must remove injected CSS immediately, not only on a future mutation.
       updateContentVisibility();
-      schedule(document.documentElement);
+      if (anyEnabled) schedule(document.documentElement);
     }
   };
   Object.defineProperty(globalThis, key, {value: api, configurable: false});
