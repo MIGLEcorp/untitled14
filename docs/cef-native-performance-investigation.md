@@ -105,3 +105,28 @@ GN generation succeeded with 34,120 targets using:
 The existing `libcef.dll` is **not** optimized until Ninja completes
 all required compilation and linking steps. RC9 currently packages the
 previously verified CEF 154 DLL with the RC8 crash guard.
+
+## RC10 native build verified (2026-11-02)
+
+The optimized native libcef.dll linked successfully, and a subsequent real
+`ninja -C out/Release_GN_x64 -j2 libcef.dll` returned `ninja: no work to do`,
+exit code 0. Its SHA256 is
+`5E196CEA21F93551C4E1B87BEE389B0A7DC993C87007222181B2556EDD060E89`
+(337,762,816 bytes). RC10 stages the entire matching CEF runtime **without**
+the previous byte-level WinRT guard; the C++ source-level fix is present.
+
+Isolated runtime tests passed: 41/41 core tests; CEF renderer smoke;
+FaceDetector `ok:0`; credential bridge; delayed optimization
+(`parse=false, load=false, slow=true, active=true`).
+
+New clean-profile site benchmark (November 2; same PC and network):
+
+| Site | Chrome 156 headless DOM | MBrowser CEF 154 visible DOM |
+|---|---:|---:|
+| Google Accounts | 1,562 ms | 2,056 ms |
+| GitHub | 5,527 ms | 6,832 ms |
+
+Previously, CEF's Google Accounts was 11,884 ms and GitHub was 17,118 ms
+(October 30), so this is a large improvement. Not a strictly controlled
+A/B test: different dates and headless vs visible; do not claim general
+Chrome parity or predict exact gains on all sites.
